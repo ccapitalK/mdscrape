@@ -1,6 +1,6 @@
 [package]
 name = "mdscrape"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Sahan Fernando <sahan.h.fernando@gmail.com>"]
 edition = "2018"
 
@@ -10,4 +10,7 @@ edition = "2018"
 reqwest = { version = "0.10", features = ["json", "stream"] }
 tokio = { version = "0.2", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
+# indicatif = { version = "0.15.0" }
+indicatif = { version = "0.14.0", path = "../indicatif" }
 argparse = "*"
+futures = "0.3.5"
