@@ -5,6 +5,8 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::task;
 
 type OpaqueError = Box<dyn std::error::Error>;
 type OpaqueResult<T> = Result<T, OpaqueError>;
@@ -18,16 +20,11 @@ enum ScrapeError {
 impl std::fmt::Display for ScrapeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ScrapeError::NoSuchChapter(chapter_id) => {
-                write!(f, "Chapter not found: {}", chapter_id)
-            }
-            ScrapeError::ChapterIsWrongLanguage(chapter_id) => {
-                write!(f, "Chapter has wrong lang code: {}", chapter_id)
-            }
+            ScrapeError::NoSuchChapter(chapter_id) => write!(f, "Chapter not found: {}", chapter_id),
+            ScrapeError::ChapterIsWrongLanguage(chapter_id) => write!(f, "Chapter has wrong lang code: {}", chapter_id),
         }
     }
 }
-
 
 impl std::error::Error for ScrapeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
@@ -35,13 +32,13 @@ impl std::error::Error for ScrapeError {
     }
 }
 
-
-struct ScrapeContext<'a> {
+struct ScrapeContext {
     verbose: bool,
     lang_code: String,
     start_chapter: Option<usize>,
     end_chapter: Option<usize>,
-    progress: &'a indicatif::MultiProgress,
+    ignored_groups: HashSet<usize>,
+    progress: Arc<indicatif::MultiProgress>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -50,15 +47,16 @@ struct TitleData {
 }
 
 impl TitleData {
-    async fn download_for_title(title_id: usize, _: &ScrapeContext<'_>) -> OpaqueResult<Self> {
-        let url = format!(
-            "https://mangadex.org/api/?id={}&server=null&type=manga",
-            title_id
-        );
-        Ok(reqwest::get(&url).await?.json::<TitleData>().await?)
+    async fn download_for_title(title_id: usize, _: &ScrapeContext) -> OpaqueResult<Self> {
+        let url = format!("https://mangadex.org/api/?id={}&server=null&type=manga", title_id);
+        reqwest::get(&url)
+            .await?
+            .json::<TitleData>()
+            .await
+            .map_err(|x| Box::new(x).into())
     }
 
-    fn setup_title_bar(&self, length: u64, context: &ScrapeContext<'_>) -> indicatif::ProgressBar {
+    fn setup_title_bar(&self, length: u64, context: &ScrapeContext) -> indicatif::ProgressBar {
         let style = indicatif::ProgressStyle::default_bar()
             .template("<{elapsed_precise}> [{bar:80.yellow/red}] Downloading chapter {pos}/{len}")
             .progress_chars("=>-");
@@ -68,34 +66,36 @@ impl TitleData {
         title_bar
     }
 
-    fn get_chapter_download_order(&self, context: &ScrapeContext<'_>) -> OpaqueResult<Vec<usize>> {
+    fn get_chapter_download_order(&self, context: &ScrapeContext) -> OpaqueResult<Vec<usize>> {
         let mut chapter_ids: Vec<_> = self
             .chapter
             .iter()
-            .filter(|(_, chapter)| chapter.lang_code == context.lang_code)
+            .filter(|(_, chapter)| {
+                chapter.lang_code == context.lang_code && !context.ignored_groups.contains(&chapter.group_id)
+            })
             .map(|(a, _)| *a)
             .collect();
         chapter_ids.sort();
-        let get_index = |chapter_id: Option<_>| chapter_id.map(|chapter_id| {
-            chapter_ids.binary_search(&chapter_id).map_err(|_| {
-                if self.chapter.contains_key(&chapter_id) {
-                    ScrapeError::ChapterIsWrongLanguage(chapter_id)
-                } else {
-                    ScrapeError::NoSuchChapter(chapter_id)
-                }
-            })
-        }).transpose();
+        let get_index = |chapter_id: Option<_>| {
+            chapter_id
+                .map(|chapter_id| {
+                    chapter_ids.binary_search(&chapter_id).map_err(|_| {
+                        if self.chapter.contains_key(&chapter_id) {
+                            ScrapeError::ChapterIsWrongLanguage(chapter_id)
+                        } else {
+                            ScrapeError::NoSuchChapter(chapter_id)
+                        }
+                    })
+                })
+                .transpose()
+        };
         let start = get_index(context.start_chapter)?.unwrap_or(0);
         let end = get_index(context.end_chapter)?.unwrap_or(chapter_ids.len());
         chapter_ids = chapter_ids.drain(start..end).collect();
         Ok(chapter_ids)
     }
 
-    async fn download_to_directory(
-        &self,
-        path: &impl AsRef<OsStr>,
-        context: &ScrapeContext<'_>,
-    ) -> OpaqueResult<()> {
+    async fn download_to_directory(&self, path: &impl AsRef<OsStr>, context: &ScrapeContext) -> OpaqueResult<()> {
         let mut seen: HashSet<(String, String)> = HashSet::new();
         let chapter_ids = self.get_chapter_download_order(context)?;
         let title_bar = self.setup_title_bar(chapter_ids.len() as u64, context);
@@ -117,10 +117,7 @@ impl TitleData {
                         continue;
                     }
                 }
-                title_bar.println(format!(
-                    "Getting data for {}: \"{}\"",
-                    chapter_id, canonical_name
-                ));
+                title_bar.println(format!("Getting data for {}: \"{}\"", chapter_id, canonical_name));
                 let chapter = ChapterData::download_for_chapter(chapter_id, context).await?;
                 if context.verbose {
                     title_bar.println(format!("Chapter API response: {:#?}", chapter));
@@ -144,6 +141,7 @@ struct ChapterReferenceData {
     volume: String,
     chapter: String,
     title: String,
+    group_id: usize,
 }
 
 impl ChapterReferenceData {
@@ -155,7 +153,7 @@ impl ChapterReferenceData {
     }
 }
 
-async fn download_image(url: &str, context: &ScrapeContext<'_>) -> OpaqueResult<Vec<u8>> {
+async fn download_image(url: &str, context: &ScrapeContext) -> OpaqueResult<Vec<u8>> {
     use tokio::stream::StreamExt;
     let mut collected_data = Vec::new();
     // Make request
@@ -165,13 +163,13 @@ async fn download_image(url: &str, context: &ScrapeContext<'_>) -> OpaqueResult<
     // Get data
     let mut data_stream = response.bytes_stream();
     // Create progress bar
-    let bar = context.progress.add(indicatif::ProgressBar::new(
-        if let Some(size) = content_length {
+    let bar = context
+        .progress
+        .add(indicatif::ProgressBar::new(if let Some(size) = content_length {
             size
         } else {
             2
-        },
-    ));
+        }));
     let image_bar_style = indicatif::ProgressStyle::default_bar()
         .template("<{elapsed_precise}> [{bar:80.yellow/red}] {pos}/{len} bytes received")
         .progress_chars("=>-");
@@ -199,22 +197,17 @@ struct ChapterData {
     hash: String,
     server: String,
     page_array: Vec<String>,
+    manga_id: usize,
+    group_id: usize,
 }
 
 impl ChapterData {
-    async fn download_for_chapter(chapter_id: usize, _: &ScrapeContext<'_>) -> OpaqueResult<Self> {
-        let url = format!(
-            "https://mangadex.org/api/?id={}&server=null&type=chapter",
-            chapter_id
-        );
+    async fn download_for_chapter(chapter_id: usize, _: &ScrapeContext) -> OpaqueResult<Self> {
+        let url = format!("https://mangadex.org/api/?id={}&server=null&type=chapter", chapter_id);
         Ok(reqwest::get(&url).await?.json::<ChapterData>().await?)
     }
 
-    async fn download_to_directory(
-        self,
-        path: &impl AsRef<OsStr>,
-        context: &ScrapeContext<'_>,
-    ) -> OpaqueResult<()> {
+    async fn download_to_directory(self, path: &impl AsRef<OsStr>, context: &ScrapeContext) -> OpaqueResult<()> {
         let mut path_buf = PathBuf::from(&path);
         let chapter_bar = {
             let style = indicatif::ProgressStyle::default_bar()
@@ -237,8 +230,7 @@ impl ChapterData {
                 let path = path_buf.as_path();
                 if path.exists() {
                     if context.verbose {
-                        chapter_bar
-                            .println(format!("Skipping {:#?}, since it already exists", path));
+                        chapter_bar.println(format!("Skipping {:#?}, since it already exists", path));
                     }
                 } else {
                     chapter_bar.println(format!("Getting {} as {:#?}", file_url, path));
@@ -263,7 +255,7 @@ enum DownloadType {
     Chapter,
 }
 
-#[tokio::main]
+#[tokio::main(core_threads = 2)]
 async fn main() -> OpaqueResult<()> {
     let mut verbose = false;
     let mut download_type = DownloadType::Title;
@@ -271,6 +263,9 @@ async fn main() -> OpaqueResult<()> {
     let mut lang_code = "gb".to_owned();
     let mut start_chapter = None;
     let mut end_chapter = None;
+    let mut print_info = false;
+    let mut no_progress = false;
+    let mut ignored_groups_str = String::new();
     {
         use argparse::{ArgumentParser, Store, StoreConst, StoreOption, StoreTrue};
         let mut parser = ArgumentParser::new();
@@ -278,6 +273,9 @@ async fn main() -> OpaqueResult<()> {
         parser
             .refer(&mut verbose)
             .add_option(&["-v", "--verbose"], StoreTrue, "Be verbose");
+        parser
+            .refer(&mut no_progress)
+            .add_option(&["--no-progress"], StoreTrue, "Don't report progress");
         parser
             .refer(&mut download_type)
             .add_option(
@@ -307,25 +305,29 @@ async fn main() -> OpaqueResult<()> {
             "Last chapter to download for a title",
         );
         parser
+            .refer(&mut print_info)
+            .add_option(&["-i", "--info"], StoreTrue, "Only print info about the chapter");
+        parser
             .refer(&mut resource_id)
-            .add_argument(
-                "resource id",
-                Store,
-                "The resource id (the number in the URL)",
-            )
+            .add_argument("resource id", Store, "The resource id (the number in the URL)")
+            .required();
+        parser
+            .refer(&mut ignored_groups_str)
+            .add_option(&["--ignored-groups"], Store, "Groups not to download chapters from, separated by commas")
             .required();
         parser.parse_args_or_exit();
     }
-    let progress = indicatif::MultiProgress::new();
+    let progress = Arc::new(indicatif::MultiProgress::new());
     let context = ScrapeContext {
-        verbose: verbose,
-        lang_code: lang_code,
-        start_chapter: start_chapter,
-        end_chapter: end_chapter,
-        progress: &progress,
+        verbose,
+        lang_code,
+        start_chapter,
+        end_chapter,
+        ignored_groups: ignored_groups_str.split(",").map(|v| str::parse::<usize>(v).unwrap()).collect(),
+        progress: progress.clone(),
     };
     let invis_bar = progress.add(indicatif::ProgressBar::hidden());
-    let invis_bar_style = indicatif::ProgressStyle::default_bar().template("[Progress]");
+    let invis_bar_style = indicatif::ProgressStyle::default_bar().template("[MDScrape]");
     invis_bar.set_style(invis_bar_style);
     let scrape_task = async {
         let current_dir = std::env::current_dir()?;
@@ -350,9 +352,14 @@ async fn main() -> OpaqueResult<()> {
         invis_bar.finish();
         Ok(())
     };
-    let (scrape_res, progress_res): (OpaqueResult<_>, _) =
-        futures::join!(scrape_task, progress.join_and_clear_async(50));
-    scrape_res?;
-    progress_res?;
+    if no_progress {
+        let scrape_res: OpaqueResult<_> = scrape_task.await;
+        scrape_res?;
+    } else {
+        let progress_res = task::spawn_blocking(move || progress.join());
+        let scrape_res: OpaqueResult<_> = scrape_task.await;
+        scrape_res?;
+        progress_res.await??;
+    }
     Ok(())
 }
