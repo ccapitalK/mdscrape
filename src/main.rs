@@ -313,8 +313,7 @@ async fn main() -> OpaqueResult<()> {
             .required();
         parser
             .refer(&mut ignored_groups_str)
-            .add_option(&["--ignored-groups"], Store, "Groups not to download chapters from, separated by commas")
-            .required();
+            .add_option(&["--ignored-groups"], Store, "Groups not to download chapters from, separated by commas");
         parser.parse_args_or_exit();
     }
     let progress = Arc::new(indicatif::MultiProgress::new());
@@ -323,7 +322,11 @@ async fn main() -> OpaqueResult<()> {
         lang_code,
         start_chapter,
         end_chapter,
-        ignored_groups: ignored_groups_str.split(",").map(|v| str::parse::<usize>(v).unwrap()).collect(),
+        ignored_groups: if ignored_groups_str.len() > 0 {
+            ignored_groups_str.split(",").map(|v| str::parse::<usize>(v).unwrap()).collect()
+        } else {
+            Default::default()
+        },
         progress: progress.clone(),
     };
     let invis_bar = progress.add(indicatif::ProgressBar::hidden());
