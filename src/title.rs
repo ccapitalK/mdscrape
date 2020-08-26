@@ -1,11 +1,42 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{PathBuf};
 
-use crate::chapter::{ChapterData, ChapterReferenceData};
+use crate::chapter::ChapterData;
 use crate::common::*;
 use crate::context::ScrapeContext;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ChapterReferenceData {
+    timestamp: u64,
+    lang_code: String,
+    volume: String,
+    chapter: String,
+    title: String,
+    group_id: usize,
+}
+
+impl ChapterReferenceData {
+    fn create_subdir_in(&self, id: usize, path: &OsStr) -> OpaqueResult<PathBuf> {
+        let path_prefix = format!("{:07} - Vol ", id);
+        let dir_walker = walkdir::WalkDir::new(path)
+            .into_iter()
+            .filter_map(|e| e.ok().filter(|d| d.file_type().is_dir()));
+        for entry in dir_walker {
+            if entry.file_name().to_string_lossy().starts_with(&path_prefix) {
+                return Ok(entry.into_path());
+            }
+        }
+        let mut path = PathBuf::from(path);
+        path.push(format!(
+            "{:07} - Vol {} - Chapter {} - {} - {}",
+            id, self.volume, self.chapter, self.lang_code, self.title
+        ));
+        std::fs::create_dir(&path)?;
+        Ok(path)
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TitleData {
@@ -68,22 +99,12 @@ impl TitleData {
 
         for (i, chapter_id) in chapter_ids.into_iter().enumerate() {
             let data = self.chapter.get(&chapter_id).unwrap();
-            let mut path_buf = PathBuf::from(path);
-            let canonical_name = data.get_canonical_name(chapter_id);
             title_bar.set_position(i as u64 + 1);
-            path_buf.push(&canonical_name);
+            let description = (data.volume.to_string(), data.chapter.to_string());
 
-            {
-                let path = path_buf.as_path();
-                let description = (data.volume.to_string(), data.chapter.to_string());
-                if !path.is_dir() {
-                    std::fs::create_dir(path)?;
-                    if seen.contains(&description) {
-                        path_buf.pop();
-                        continue;
-                    }
-                }
-                title_bar.println(format!("Getting data for {}: \"{}\"", chapter_id, canonical_name));
+            if !seen.contains(&description) {
+                let path = data.create_subdir_in(chapter_id, path.as_ref())?;
+                title_bar.println(format!("Getting data for {}: {:?}", chapter_id, path));
                 let chapter = ChapterData::download_for_chapter(chapter_id, context).await?;
                 if context.verbose {
                     title_bar.println(format!("Chapter API response: {:#?}", chapter));
@@ -91,8 +112,6 @@ impl TitleData {
                 chapter.download_to_directory(&path, context).await?;
                 seen.insert(description);
             }
-
-            path_buf.pop();
         }
 
         title_bar.finish_and_clear();

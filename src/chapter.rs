@@ -7,29 +7,11 @@ use std::path::PathBuf;
 use crate::common::*;
 use crate::context::ScrapeContext;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ChapterReferenceData {
-    pub timestamp: u64,
-    pub lang_code: String,
-    pub volume: String,
-    pub chapter: String,
-    pub title: String,
-    pub group_id: usize,
-}
-
-impl ChapterReferenceData {
-    pub fn get_canonical_name(&self, id: usize) -> String {
-        format!(
-            "{:07} - Vol {} - Chapter {} - {} - {}",
-            id, self.volume, self.chapter, self.lang_code, self.title
-        )
-    }
-}
-
-pub async fn download_image(url: &str, context: &ScrapeContext) -> OpaqueResult<Vec<u8>> {
+async fn download_image(url: &str, context: &ScrapeContext) -> OpaqueResult<Vec<u8>> {
     use tokio::stream::StreamExt;
     let mut collected_data = Vec::new();
     // Make request
+    // TODO: Exponential backoff
     let response = reqwest::get(url).await?;
     // Get response size, if known so progress bar can render
     let content_length = response.content_length();
@@ -77,6 +59,7 @@ pub struct ChapterData {
 impl ChapterData {
     pub async fn download_for_chapter(chapter_id: usize, _: &ScrapeContext) -> OpaqueResult<Self> {
         let url = format!("https://mangadex.org/api/?id={}&server=null&type=chapter", chapter_id);
+        // TODO: Exponential backoff
         Ok(reqwest::get(&url).await?.json::<ChapterData>().await?)
     }
 
@@ -84,7 +67,7 @@ impl ChapterData {
         let mut path_buf = PathBuf::from(&path);
         let chapter_bar = {
             let style = indicatif::ProgressStyle::default_bar()
-                .template("<{elapsed_precise}> [{bar:80.yellow/red}] Downloading image {pos}/{len}")
+                .template("<{elapsed_precise}> [{bar:80.yellow/red}] {pos}/{len} images downloaded")
                 .progress_chars("=>-");
             let chapter_bar = context
                 .progress
