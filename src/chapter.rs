@@ -11,7 +11,6 @@ async fn download_image(url: &str, context: &ScrapeContext) -> OpaqueResult<Vec<
     use tokio::stream::StreamExt;
     let mut collected_data = Vec::new();
     // Make request
-    // TODO: Exponential backoff
     let response = reqwest::get(url).await?;
     // Get response size, if known so progress bar can render
     let content_length = response.content_length();
@@ -58,9 +57,13 @@ pub struct ChapterData {
 
 impl ChapterData {
     pub async fn download_for_chapter(chapter_id: usize, _: &ScrapeContext) -> OpaqueResult<Self> {
+        use backoff::{future::FutureOperation as _, ExponentialBackoff};
         let url = format!("https://mangadex.org/api/?id={}&server=null&type=chapter", chapter_id);
-        // TODO: Exponential backoff
-        Ok(reqwest::get(&url).await?.json::<ChapterData>().await?)
+        Ok(
+            (|| async { Ok(reqwest::get(&url).await?.json::<ChapterData>().await?) })
+                .retry(ExponentialBackoff::default())
+                .await?,
+        )
     }
 
     pub async fn download_to_directory(self, path: &impl AsRef<OsStr>, context: &ScrapeContext) -> OpaqueResult<()> {
@@ -83,6 +86,7 @@ impl ChapterData {
             let extension = filename.split(".").last().unwrap_or("png");
             path_buf.push(format!("{:04}.{}", (i + 1), extension));
             {
+                use backoff::{future::FutureOperation as _, ExponentialBackoff};
                 let path = path_buf.as_path();
                 if path.exists() {
                     if context.verbose {
@@ -90,7 +94,9 @@ impl ChapterData {
                     }
                 } else {
                     chapter_bar.println(format!("Getting {} as {:#?}", file_url, path));
-                    let chapter_data = download_image(&file_url, context).await?;
+                    let chapter_data = (|| async { Ok(download_image(&file_url, context).await?) })
+                        .retry(ExponentialBackoff::default())
+                        .await?;
                     // Create output file
                     let mut out_file = File::create(path)?;
                     // Write data

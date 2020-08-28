@@ -45,12 +45,13 @@ pub struct TitleData {
 
 impl TitleData {
     pub async fn download_for_title(title_id: usize, _: &ScrapeContext) -> OpaqueResult<Self> {
+        use backoff::{future::FutureOperation as _, ExponentialBackoff};
         let url = format!("https://mangadex.org/api/?id={}&server=null&type=manga", title_id);
-        reqwest::get(&url)
-            .await?
-            .json::<TitleData>()
-            .await
-            .map_err(|x| Box::new(x).into())
+        Ok(
+            (|| async { Ok(reqwest::get(&url).await?.json::<TitleData>().await?) })
+                .retry(ExponentialBackoff::default())
+                .await?,
+        )
     }
 
     fn setup_title_bar(&self, length: u64, context: &ScrapeContext) -> indicatif::ProgressBar {
