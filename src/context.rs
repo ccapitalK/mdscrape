@@ -41,7 +41,7 @@ impl ScrapeContext {
                 .add_option(&["--no-progress"], StoreFalse, "Don't report progress");
             parser
                 .refer(&mut download_type_is_title)
-                .add_option(&["-c", "--chapter"], StoreTrue, "Download a single manga chapter")
+                .add_option(&["-c", "--chapter"], StoreFalse, "Download a single manga chapter")
                 .add_option(&["-t", "--title"], StoreTrue, "Download an entire manga title")
                 .required();
             parser.refer(&mut lang_code).add_option(
