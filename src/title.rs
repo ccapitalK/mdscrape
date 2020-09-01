@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 
 use crate::chapter::ChapterData;
 use crate::common::*;
@@ -45,13 +45,16 @@ pub struct TitleData {
 
 impl TitleData {
     pub async fn download_for_title(title_id: usize, _: &ScrapeContext) -> OpaqueResult<Self> {
-        use backoff::{future::FutureOperation as _, ExponentialBackoff};
+        use crate::retry::*;
         let url = format!("https://mangadex.org/api/?id={}&server=null&type=manga", title_id);
-        Ok(
-            (|| async { Ok(reqwest::get(&url).await?.json::<TitleData>().await?) })
-                .retry(ExponentialBackoff::default())
-                .await?,
-        )
+        Ok(with_retry(|| async {
+            Ok(reqwest::get(&url)
+                .await?
+                .error_for_status()?
+                .json::<TitleData>()
+                .await?)
+        })
+        .await?)
     }
 
     fn setup_title_bar(&self, length: u64, context: &ScrapeContext) -> indicatif::ProgressBar {

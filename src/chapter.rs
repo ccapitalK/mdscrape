@@ -6,12 +6,13 @@ use std::path::PathBuf;
 
 use crate::common::*;
 use crate::context::ScrapeContext;
+use crate::retry::with_retry;
 
 async fn download_image(url: &str, context: &ScrapeContext) -> OpaqueResult<Vec<u8>> {
     use tokio::stream::StreamExt;
     let mut collected_data = Vec::new();
     // Make request
-    let response = reqwest::get(url).await?;
+    let response = with_retry(|| async {Ok(reqwest::get(url).await?.error_for_status()?)}).await?;
     // Get response size, if known so progress bar can render
     let content_length = response.content_length();
     // Get data
@@ -57,13 +58,16 @@ pub struct ChapterData {
 
 impl ChapterData {
     pub async fn download_for_chapter(chapter_id: usize, _: &ScrapeContext) -> OpaqueResult<Self> {
-        use backoff::{future::FutureOperation as _, ExponentialBackoff};
+        use crate::retry::*;
         let url = format!("https://mangadex.org/api/?id={}&server=null&type=chapter", chapter_id);
-        Ok(
-            (|| async { Ok(reqwest::get(&url).await?.json::<ChapterData>().await?) })
-                .retry(ExponentialBackoff::default())
-                .await?,
-        )
+        Ok(with_retry(|| async {
+            Ok(reqwest::get(&url)
+                .await?
+                .error_for_status()?
+                .json::<ChapterData>()
+                .await?)
+        })
+        .await?)
     }
 
     pub async fn download_to_directory(self, path: &impl AsRef<OsStr>, context: &ScrapeContext) -> OpaqueResult<()> {
@@ -79,14 +83,13 @@ impl ChapterData {
             chapter_bar
         };
         for (i, filename) in self.page_array.iter().enumerate() {
-            // update bar
+            // Update bar
             chapter_bar.set_position(i as u64);
             // Determine resource names
             let file_url = format!("{}{}/{}", self.server, self.hash, filename);
             let extension = filename.split(".").last().unwrap_or("png");
             path_buf.push(format!("{:04}.{}", (i + 1), extension));
             {
-                use backoff::{future::FutureOperation as _, ExponentialBackoff};
                 let path = path_buf.as_path();
                 if path.exists() {
                     if context.verbose {
@@ -94,9 +97,7 @@ impl ChapterData {
                     }
                 } else {
                     chapter_bar.println(format!("Getting {} as {:#?}", file_url, path));
-                    let chapter_data = (|| async { Ok(download_image(&file_url, context).await?) })
-                        .retry(ExponentialBackoff::default())
-                        .await?;
+                    let chapter_data = download_image(&file_url, context).await?;
                     // Create output file
                     let mut out_file = File::create(path)?;
                     // Write data
