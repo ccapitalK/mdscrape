@@ -85,10 +85,12 @@ impl ScrapeContext {
                 DownloadType::Chapter(resource_id)
             },
             ignored_groups: if ignored_groups_str.len() > 0 {
-                // FIXME: Replace unwrap with proper error
                 ignored_groups_str
                     .split(",")
-                    .map(|v| str::parse::<usize>(v).unwrap())
+                    .map(|v| {
+                        v.parse::<usize>()
+                            .expect(&format!("Failed to parse ignored_group: {}", v))
+                    })
                     .collect()
             } else {
                 Default::default()
