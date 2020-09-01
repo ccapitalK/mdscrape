@@ -7,6 +7,10 @@ pub enum ScrapeError {
     ChapterIsWrongLanguage(usize),
 }
 
+pub fn escape_path_string(s: String) -> String {
+    s.chars().map(|x| if x == '/' { '-' } else { x }).collect()
+}
+
 impl std::fmt::Display for ScrapeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

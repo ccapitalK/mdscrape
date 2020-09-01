@@ -29,10 +29,10 @@ impl ChapterReferenceData {
             }
         }
         let mut path = PathBuf::from(path);
-        path.push(format!(
+        path.push(escape_path_string(format!(
             "{:07} - Vol {} - Chapter {} - {} - {}",
             id, self.volume, self.chapter, self.lang_code, self.title
-        ));
+        )));
         std::fs::create_dir(&path)?;
         Ok(path)
     }
