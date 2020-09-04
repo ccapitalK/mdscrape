@@ -21,6 +21,7 @@ struct QueuedTask<K: Clone + Eq + PartialEq> {
     waker: Waker,
 }
 
+// Tries to vend tickets in roughly FIFO order
 // FIXME: Optimize this please, everything's linear :(
 pub struct Ticketer<K: Clone + Debug + Eq + Hash + PartialEq> {
     tickets: HashMap<K, usize>,
@@ -35,8 +36,9 @@ where
     K: Clone + Debug + Eq + Hash + PartialEq,
 {
     pub fn new(per_origin_threshold: usize, global_threshold: usize) -> Self {
-        assert!(per_origin_threshold > 0);
-        assert!(global_threshold > 0);
+        // Limits, to not accidentally DOS (or more likely get ip-banned by) mangadex
+        assert!(per_origin_threshold > 0 && per_origin_threshold <= 6);
+        assert!(global_threshold > 0 && global_threshold <= 30);
         Ticketer {
             per_origin_threshold,
             global_threshold,
