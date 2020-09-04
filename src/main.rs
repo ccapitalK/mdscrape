@@ -2,6 +2,7 @@ mod chapter;
 mod common;
 mod context;
 mod retry;
+mod throttle;
 mod title;
 
 use tokio::task;
@@ -11,7 +12,7 @@ use common::*;
 use context::ScrapeContext;
 use title::TitleData;
 
-#[tokio::main(core_threads = 2)]
+#[tokio::main(core_threads = 1)]
 async fn main() -> OpaqueResult<()> {
     let context = ScrapeContext::from_args();
     let progress = context.progress.clone();

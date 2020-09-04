@@ -1,5 +1,10 @@
+use url::Origin;
+
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
+
+use crate::throttle::{Ticketer, TicketFuture};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum DownloadType {
@@ -16,6 +21,7 @@ pub struct ScrapeContext {
     pub download_type: DownloadType,
     pub show_progress: bool,
     pub progress: Arc<indicatif::MultiProgress>,
+    ticketer: RefCell<Ticketer<Origin>>,
 }
 
 impl ScrapeContext {
@@ -29,6 +35,8 @@ impl ScrapeContext {
         let mut print_info = false;
         let mut show_progress = true;
         let mut ignored_groups_str = String::new();
+        let mut global_threshold = 1;
+        let mut per_origin_threshold = 1;
         {
             use argparse::{ArgumentParser, Store, StoreFalse, StoreOption, StoreTrue};
             let mut parser = ArgumentParser::new();
@@ -63,6 +71,20 @@ impl ScrapeContext {
                 .refer(&mut print_info)
                 .add_option(&["-i", "--info"], StoreTrue, "Only print info about the chapter");
             parser
+                .refer(&mut global_threshold)
+                .add_option(
+                    &["-g", "--global-threshold"],
+                    Store,
+                    "Max number of simultaneous connections",
+                );
+            parser
+                .refer(&mut per_origin_threshold)
+                .add_option(
+                    &["-p", "--per-origin-threshold"],
+                    Store,
+                    "Max number of simultaneous connections per origin",
+                );
+            parser
                 .refer(&mut resource_id)
                 .add_argument("resource id", Store, "The resource id (the number in the URL)")
                 .required();
@@ -89,13 +111,17 @@ impl ScrapeContext {
                     .split(",")
                     .map(|v| {
                         v.parse::<usize>()
-                            .expect(&format!("Failed to parse ignored_group: {}", v))
+                            .expect(&format!("Failed to parse ignored_group [expected integer group id]: {}", v))
                     })
                     .collect()
             } else {
                 Default::default()
             },
             progress: Arc::new(indicatif::MultiProgress::new()),
+            ticketer: RefCell::new(Ticketer::new(per_origin_threshold, global_threshold))
         }
+    }
+    pub fn get_ticket<'origin>(&'origin self, origin: &'origin Origin) -> TicketFuture<'origin, Origin> {
+        TicketFuture::new(origin, &self.ticketer)
     }
 }
