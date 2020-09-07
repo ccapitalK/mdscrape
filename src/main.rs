@@ -14,6 +14,9 @@ use common::*;
 use context::ScrapeContext;
 use title::TitleData;
 
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 #[tokio::main(core_threads = 1)]
 async fn main() -> OpaqueResult<()> {
     let context = ScrapeContext::from_args();
