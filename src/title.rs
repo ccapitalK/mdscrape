@@ -25,7 +25,7 @@ pub struct TitleData {
 }
 
 impl TitleData {
-    fn create_subdir_set(&self, ids: &[usize], base_path: &OsStr) -> Result<HashMap<usize,PathBuf>> {
+    fn create_subdir_set(&self, ids: &[usize], base_path: &OsStr) -> Result<HashMap<usize, PathBuf>> {
         let folder_id_regex = regex::Regex::new("^([0-9]{4,}) - Vol").unwrap();
         let mut ids: HashSet<_> = ids.iter().collect();
         let mut paths = HashMap::new();
@@ -60,7 +60,11 @@ impl TitleData {
 
     pub async fn download_for_title(title_id: usize, context: &ScrapeContext) -> Result<Self> {
         use crate::retry::*;
-        let url = Url::parse(&format!("https://mangadex.org/api/?id={}&server=null&type=manga", title_id)).unwrap();
+        let url = Url::parse(&format!(
+            "https://mangadex.org/api/?id={}&server=null&type=manga",
+            title_id
+        ))
+        .unwrap();
         let origin = url.origin();
         let _ticket = context.get_ticket(&origin).await;
         Ok(with_retry(|| async {
@@ -109,17 +113,20 @@ impl TitleData {
         let start = get_index(context.start_chapter)?.unwrap_or(0);
         let end = get_index(context.end_chapter)?.unwrap_or(chapter_ids.len());
         let mut seen = HashSet::new();
-        chapter_ids = chapter_ids.drain(start..end).filter(|id| {
-            let data = self.chapter.get(&id).unwrap();
-            let description = (data.volume.to_string(), data.chapter.to_string());
+        chapter_ids = chapter_ids
+            .drain(start..end)
+            .filter(|id| {
+                let data = self.chapter.get(&id).unwrap();
+                let description = (data.volume.to_string(), data.chapter.to_string());
 
-            if !seen.contains(&description) {
-                seen.insert(description);
-                true
-            } else {
-                false
-            }
-        }).collect();
+                if !seen.contains(&description) {
+                    seen.insert(description);
+                    true
+                } else {
+                    false
+                }
+            })
+            .collect();
         Ok(chapter_ids)
     }
 
@@ -129,21 +136,24 @@ impl TitleData {
         let title_bar = self.setup_title_bar(chapter_ids.len() as u64, context);
         let chapter_paths = self.create_subdir_set(&chapter_ids, path.as_ref())?;
 
-        let mut tasks = chapter_ids.into_iter().map(|chapter_id| {
-            let title_bar = &title_bar;
-            let chapter_paths = &chapter_paths;
-            async move {
-                let path = chapter_paths.get(&chapter_id).unwrap();
-                let chapter = ChapterData::download_for_chapter(chapter_id, context).await?;
-                title_bar.println(format!("Got data for {}: {:?}", chapter_id, path));
-                title_bar.set_position(title_bar.position() + 1);
-                if context.verbose {
-                    title_bar.println(format!("Chapter API response: {:#?}", chapter));
+        let mut tasks = chapter_ids
+            .into_iter()
+            .map(|chapter_id| {
+                let title_bar = &title_bar;
+                let chapter_paths = &chapter_paths;
+                async move {
+                    let path = chapter_paths.get(&chapter_id).unwrap();
+                    let chapter = ChapterData::download_for_chapter(chapter_id, context).await?;
+                    title_bar.println(format!("Got data for {}: {:?}", chapter_id, path));
+                    title_bar.set_position(title_bar.position() + 1);
+                    if context.verbose {
+                        title_bar.println(format!("Chapter API response: {:#?}", chapter));
+                    }
+                    chapter.download_to_directory(&path, context).await?;
+                    Ok::<(), DownloadError>(())
                 }
-                chapter.download_to_directory(&path, context).await?;
-                Ok::<(), DownloadError>(())
-            }
-        }).collect::<FuturesUnordered<_>>();
+            })
+            .collect::<FuturesUnordered<_>>();
 
         while let Some(result) = tasks.next().await {
             result?;

@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use crate::context::ScrapeContext;
-use crate::retry::{DownloadError, Result, with_retry};
+use crate::retry::{with_retry, DownloadError, Result};
 
 async fn download_image(url: &Url, context: &ScrapeContext) -> Result<Vec<u8>> {
     use tokio::stream::StreamExt;
@@ -59,7 +59,11 @@ pub struct ChapterData {
 impl ChapterData {
     pub async fn download_for_chapter(chapter_id: usize, context: &ScrapeContext) -> Result<Self> {
         use crate::retry::*;
-        let url = Url::parse(&format!("https://mangadex.org/api/?id={}&server=null&type=chapter", chapter_id)).unwrap();
+        let url = Url::parse(&format!(
+            "https://mangadex.org/api/?id={}&server=null&type=chapter",
+            chapter_id
+        ))
+        .unwrap();
         let origin = url.origin();
         let _ticket = context.get_ticket(&origin).await;
         Ok(with_retry(|| async {
@@ -87,40 +91,44 @@ impl ChapterData {
         });
         let url_base = format!("{}{}", self.server, self.hash);
         let origin = Url::parse(&url_base)?.origin();
-        let mut tasks = self.page_array.iter().enumerate().map(|(i, filename)| {
-            let chapter_bar = chapter_bar.clone();
-            let url_base = &url_base;
-            let origin = &origin;
-            async move {
-                let _ticket = context.get_ticket(origin).await;
-                let mut path_buf = PathBuf::from(&path);
-                // Determine resource names
-                let file_url = format!("{}/{}", url_base, filename);
-                let url = Url::parse(&file_url)?;
-                let extension = filename.split(".").last().unwrap_or("png");
-                path_buf.push(format!("{:04}.{}", (i + 1), extension));
-                {
-                    let path = path_buf.as_path();
-                    if path.exists() {
-                        if context.verbose {
-                            chapter_bar.println(format!("Skipping {:#?}, since it already exists", path));
+        let mut tasks = self
+            .page_array
+            .iter()
+            .enumerate()
+            .map(|(i, filename)| {
+                let chapter_bar = chapter_bar.clone();
+                let url_base = &url_base;
+                let origin = &origin;
+                async move {
+                    let _ticket = context.get_ticket(origin).await;
+                    let mut path_buf = PathBuf::from(&path);
+                    // Determine resource names
+                    let file_url = format!("{}/{}", url_base, filename);
+                    let url = Url::parse(&file_url)?;
+                    let extension = filename.split(".").last().unwrap_or("png");
+                    path_buf.push(format!("{:04}.{}", (i + 1), extension));
+                    {
+                        let path = path_buf.as_path();
+                        if path.exists() {
+                            if context.verbose {
+                                chapter_bar.println(format!("Skipping {:#?}, since it already exists", path));
+                            }
+                        } else {
+                            chapter_bar.println(format!("Getting {} as {:#?}", file_url, path));
+                            let chapter_data =
+                                with_retry(|| async { Ok(download_image(&url, context).await?) }).await?;
+                            // Create output file
+                            let mut out_file = File::create(path)?;
+                            // Write data
+                            out_file.write(&chapter_data)?;
                         }
-                    } else {
-                        chapter_bar.println(format!("Getting {} as {:#?}", file_url, path));
-                        let chapter_data = with_retry(|| async {
-                            Ok(download_image(&url, context).await?)
-                        }).await?;
-                        // Create output file
-                        let mut out_file = File::create(path)?;
-                        // Write data
-                        out_file.write(&chapter_data)?;
                     }
+                    // Update bar
+                    chapter_bar.set_position(chapter_bar.position() + 1);
+                    Ok::<(), DownloadError>(())
                 }
-                // Update bar
-                chapter_bar.set_position(chapter_bar.position() + 1);
-                Ok::<(), DownloadError>(())
-            }
-        }).collect::<FuturesUnordered<_>>();
+            })
+            .collect::<FuturesUnordered<_>>();
 
         while let Some(result) = tasks.next().await {
             result?;

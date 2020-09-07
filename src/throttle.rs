@@ -10,7 +10,10 @@ pub struct Ticket<'ticketer, K: Clone + Debug + Eq + Hash + PartialEq> {
     ticketer: &'ticketer RefCell<Ticketer<K>>,
 }
 
-impl<'ticketer, K> Drop for Ticket<'ticketer, K> where K: Clone + Debug + Eq + Hash + PartialEq {
+impl<'ticketer, K> Drop for Ticket<'ticketer, K>
+where
+    K: Clone + Debug + Eq + Hash + PartialEq,
+{
     fn drop(&mut self) {
         self.ticketer.borrow_mut().release(&self.key);
     }
@@ -80,7 +83,7 @@ where
     fn park(&mut self, key: &K, waker: &Waker) {
         self.parked_tasks.push_back(QueuedTask {
             key: key.clone(),
-            waker: waker.clone()
+            waker: waker.clone(),
         });
     }
     fn wake_one(&mut self) {
@@ -95,7 +98,7 @@ where
     }
 }
 
-pub struct TicketFuture<'ticketer, K> 
+pub struct TicketFuture<'ticketer, K>
 where
     K: Clone + Debug + Eq + Hash + PartialEq,
 {
@@ -108,14 +111,11 @@ where
     K: Clone + Debug + Eq + Hash + PartialEq,
 {
     pub fn new(key: &'ticketer K, ticketer: &'ticketer RefCell<Ticketer<K>>) -> Self {
-        TicketFuture {
-            key,
-            ticketer,
-        }
+        TicketFuture { key, ticketer }
     }
 }
 
-impl<'ticketer, K> Future for TicketFuture<'ticketer, K> 
+impl<'ticketer, K> Future for TicketFuture<'ticketer, K>
 where
     K: Clone + Debug + Eq + Hash + PartialEq,
 {
@@ -136,8 +136,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::throttle::{TicketFuture, Ticketer};
     use std::cell::RefCell;
-    use crate::throttle::{Ticketer, TicketFuture};
     #[tokio::test]
     async fn test_throttle_ticketing() {
         let ticketer = RefCell::new(Ticketer::new(2, 3));

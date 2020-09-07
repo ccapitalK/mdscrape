@@ -37,7 +37,9 @@ impl std::fmt::Display for DownloadError {
             DownloadError::IOError(e) => write!(f, "IO error: {}", e),
             DownloadError::ParseError(e) => write!(f, "Url parsing error: {}", e),
             DownloadError::NoSuchChapter(chapter_id) => write!(f, "Chapter not found: {}", chapter_id),
-            DownloadError::ChapterIsWrongLanguage(chapter_id) => write!(f, "Chapter has wrong lang code: {}", chapter_id),
+            DownloadError::ChapterIsWrongLanguage(chapter_id) => {
+                write!(f, "Chapter has wrong lang code: {}", chapter_id)
+            }
             DownloadError::ReqwestError(e) => write!(f, "Download error: {}", e),
         }
     }

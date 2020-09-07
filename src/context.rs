@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::throttle::{Ticketer, TicketFuture};
+use crate::throttle::{TicketFuture, Ticketer};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum DownloadType {
@@ -70,20 +70,16 @@ impl ScrapeContext {
             parser
                 .refer(&mut print_info)
                 .add_option(&["-i", "--info"], StoreTrue, "Only print info about the chapter");
-            parser
-                .refer(&mut global_threshold)
-                .add_option(
-                    &["-g", "--global-threshold"],
-                    Store,
-                    "Max number of simultaneous connections",
-                );
-            parser
-                .refer(&mut per_origin_threshold)
-                .add_option(
-                    &["-p", "--per-origin-threshold"],
-                    Store,
-                    "Max number of simultaneous connections per origin",
-                );
+            parser.refer(&mut global_threshold).add_option(
+                &["-g", "--global-threshold"],
+                Store,
+                "Max number of simultaneous connections",
+            );
+            parser.refer(&mut per_origin_threshold).add_option(
+                &["-p", "--per-origin-threshold"],
+                Store,
+                "Max number of simultaneous connections per origin",
+            );
             parser
                 .refer(&mut resource_id)
                 .add_argument("resource id", Store, "The resource id (the number in the URL)")
@@ -110,15 +106,17 @@ impl ScrapeContext {
                 ignored_groups_str
                     .split(",")
                     .map(|v| {
-                        v.parse::<usize>()
-                            .expect(&format!("Failed to parse ignored_group [expected integer group id]: {}", v))
+                        v.parse::<usize>().expect(&format!(
+                            "Failed to parse ignored_group [expected integer group id]: {}",
+                            v
+                        ))
                     })
                     .collect()
             } else {
                 Default::default()
             },
             progress: Arc::new(indicatif::MultiProgress::new()),
-            ticketer: RefCell::new(Ticketer::new(per_origin_threshold, global_threshold))
+            ticketer: RefCell::new(Ticketer::new(per_origin_threshold, global_threshold)),
         }
     }
     pub fn get_ticket<'origin>(&'origin self, origin: &'origin Origin) -> TicketFuture<'origin, Origin> {
