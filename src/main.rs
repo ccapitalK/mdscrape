@@ -6,6 +6,7 @@ mod context;
 mod retry;
 mod throttle;
 mod title;
+mod tui;
 
 use tokio::task;
 
@@ -19,6 +20,7 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[tokio::main(core_threads = 1)]
 async fn main() -> OpaqueResult<()> {
+    // let tui = TUI::new()?;
     let context = ScrapeContext::from_args();
     let progress = context.progress.clone();
     let invis_bar = progress.add(indicatif::ProgressBar::hidden());
@@ -44,7 +46,7 @@ async fn main() -> OpaqueResult<()> {
                 title.download_to_directory(&current_dir, &context).await?;
             }
         }
-        invis_bar.finish();
+        invis_bar.finish_and_clear();
         Ok(())
     };
     if context.show_progress {

@@ -22,6 +22,7 @@ where
 struct QueuedTask<K: Clone + Eq + PartialEq> {
     key: K,
     waker: Waker,
+    high_priority: bool,
 }
 
 // Tries to vend tickets in roughly FIFO order
@@ -80,17 +81,27 @@ where
         }
         self.wake_one()
     }
-    fn park(&mut self, key: &K, waker: &Waker) {
-        self.parked_tasks.push_back(QueuedTask {
+    fn park(&mut self, key: &K, waker: &Waker, high_priority: bool) {
+        let queued_task = QueuedTask {
             key: key.clone(),
             waker: waker.clone(),
-        });
+            high_priority,
+        };
+        if high_priority {
+            self.parked_tasks.push_front(queued_task);
+        } else {
+            self.parked_tasks.push_back(queued_task);
+        }
     }
     fn wake_one(&mut self) {
         for i in 0..self.parked_tasks.len() {
             let key = &self.parked_tasks[i].key;
             if self.tickets.get(&key).filter(|v| **v == self.per_origin_threshold) == None {
-                let task = self.parked_tasks.swap_remove_back(i).unwrap();
+                let task = if self.parked_tasks[i].high_priority {
+                    self.parked_tasks.swap_remove_front(i).unwrap()
+                } else {
+                    self.parked_tasks.swap_remove_back(i).unwrap()
+                };
                 task.waker.wake();
                 return;
             }
@@ -104,14 +115,19 @@ where
 {
     key: &'ticketer K,
     ticketer: &'ticketer RefCell<Ticketer<K>>,
+    high_priority: bool,
 }
 
 impl<'ticketer, K> TicketFuture<'ticketer, K>
 where
     K: Clone + Debug + Eq + Hash + PartialEq,
 {
-    pub fn new(key: &'ticketer K, ticketer: &'ticketer RefCell<Ticketer<K>>) -> Self {
-        TicketFuture { key, ticketer }
+    pub fn new(key: &'ticketer K, ticketer: &'ticketer RefCell<Ticketer<K>>, high_priority: bool) -> Self {
+        TicketFuture {
+            key,
+            ticketer,
+            high_priority,
+        }
     }
 }
 
@@ -128,7 +144,7 @@ where
                 ticketer: self.ticketer,
             });
         } else {
-            ticketer.park(self.key, cx.waker());
+            ticketer.park(self.key, cx.waker(), self.high_priority);
         }
         Poll::Pending
     }

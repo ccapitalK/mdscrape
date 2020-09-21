@@ -120,6 +120,9 @@ impl ScrapeContext {
         }
     }
     pub fn get_ticket<'origin>(&'origin self, origin: &'origin Origin) -> TicketFuture<'origin, Origin> {
-        TicketFuture::new(origin, &self.ticketer)
+        TicketFuture::new(origin, &self.ticketer, false)
+    }
+    pub fn get_priority_ticket<'origin>(&'origin self, origin: &'origin Origin) -> TicketFuture<'origin, Origin> {
+        TicketFuture::new(origin, &self.ticketer, true)
     }
 }

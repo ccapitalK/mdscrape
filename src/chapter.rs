@@ -91,6 +91,7 @@ impl ChapterData {
         });
         let url_base = format!("{}{}", self.server, self.hash);
         let origin = Url::parse(&url_base)?.origin();
+        context.get_ticket(&origin).await;
         let mut tasks = self
             .page_array
             .iter()
@@ -100,7 +101,6 @@ impl ChapterData {
                 let url_base = &url_base;
                 let origin = &origin;
                 async move {
-                    let _ticket = context.get_ticket(origin).await;
                     let mut path_buf = PathBuf::from(&path);
                     // Determine resource names
                     let file_url = format!("{}/{}", url_base, filename);
@@ -114,6 +114,7 @@ impl ChapterData {
                                 chapter_bar.println(format!("Skipping {:#?}, since it already exists", path));
                             }
                         } else {
+                            let _ticket = context.get_priority_ticket(origin).await;
                             chapter_bar.println(format!("Getting {} as {:#?}", file_url, path));
                             let chapter_data =
                                 with_retry(|| async { Ok(download_image(&url, context).await?) }).await?;
