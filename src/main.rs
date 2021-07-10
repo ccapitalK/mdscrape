@@ -40,7 +40,7 @@ async fn main() -> OpaqueResult<()> {
         match context.download_type {
             context::DownloadType::Chapter(ref uuid) => {
                 info!("Going to download chapter {:?}", uuid);
-                let chapter = ChapterInfo::download_for_chapter(* uuid, &context).await ?;
+                let chapter = ChapterInfo::download_for_chapter(*uuid, &context).await?;
                 if context.verbose {
                     info!("Got chapter information: {:#?}", chapter);
                 }

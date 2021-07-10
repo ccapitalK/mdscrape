@@ -35,7 +35,10 @@ pub struct Ticketer<K: Clone + Debug + Eq + Hash + PartialEq> {
     parked_tasks: VecDeque<QueuedTask<K>>,
 }
 
-impl<K> Debug for Ticketer<K> where K: Clone + Debug + Eq + Hash + PartialEq {
+impl<K> Debug for Ticketer<K>
+where
+    K: Clone + Debug + Eq + Hash + PartialEq,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("Ticketer")
     }

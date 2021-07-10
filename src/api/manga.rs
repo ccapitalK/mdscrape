@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::api;
 use api::chapter::ChapterResponse;

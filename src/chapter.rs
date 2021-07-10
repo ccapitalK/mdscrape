@@ -1,5 +1,5 @@
 use reqwest::Url;
-use serde::{Deserialize, de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Write;
@@ -61,25 +61,26 @@ pub struct ChapterInfo {
 }
 
 impl ChapterInfo {
-    async fn download<T>(url: Url, context: &ScrapeContext) -> Result<T> where T: DeserializeOwned {
+    async fn download<T>(url: Url, context: &ScrapeContext) -> Result<T>
+    where
+        T: DeserializeOwned,
+    {
         let origin = url.origin();
         let _ticket = context.get_ticket(&origin).await;
-        with_retry(|| async {
-            Ok(reqwest::get(url.clone())
-                .await?
-                .error_for_status()?
-                .json::<T>()
-                .await?)
-        }).await
+        with_retry(|| async { Ok(reqwest::get(url.clone()).await?.error_for_status()?.json::<T>().await?) }).await
     }
 
-    pub async fn from_chapter_response(response: api::chapter::ChapterResponse, context: &ScrapeContext) -> Result<Self> {
-        let md_at_home_info_url = Url::parse(&format!(
-            "https://api.mangadex.org/at-home/server/{}",
-            response.data.id
-        )).unwrap();
+    pub async fn from_chapter_response(
+        response: api::chapter::ChapterResponse,
+        context: &ScrapeContext,
+    ) -> Result<Self> {
+        let md_at_home_info_url =
+            Url::parse(&format!("https://api.mangadex.org/at-home/server/{}", response.data.id)).unwrap();
 
-        debug!("Going to determine owning server address from \"{}\"", md_at_home_info_url);
+        debug!(
+            "Going to determine owning server address from \"{}\"",
+            md_at_home_info_url
+        );
         let server_info: api::at_home::ServerInfoResponse = Self::download(md_at_home_info_url, context).await?;
         Ok(ChapterInfo {
             server: server_info.base_url,
@@ -92,10 +93,7 @@ impl ChapterInfo {
 
     pub async fn download_for_chapter(chapter_id: Uuid, context: &ScrapeContext) -> Result<Self> {
         use crate::retry::*;
-        let chapter_info_url = Url::parse(&format!(
-            "https://api.mangadex.org/chapter/{}",
-            chapter_id
-        )).unwrap();
+        let chapter_info_url = Url::parse(&format!("https://api.mangadex.org/chapter/{}", chapter_id)).unwrap();
 
         debug!("Going to download chapter info from \"{}\"", chapter_info_url);
         let response: api::chapter::ChapterResponse = Self::download(chapter_info_url, context).await?;

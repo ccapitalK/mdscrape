@@ -7,11 +7,11 @@ use uuid::Uuid;
 
 use log::debug;
 
+use crate::api::{chapter::ChapterResponse, manga::MangaFeedResponse};
 use crate::chapter::ChapterInfo;
 use crate::common::*;
 use crate::context::ScrapeContext;
 use crate::retry::{DownloadError, Result};
-use crate::api::{chapter::ChapterResponse, manga::MangaFeedResponse};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TitleData {
@@ -63,15 +63,14 @@ impl TitleData {
                     .error_for_status()?
                     .json::<MangaFeedResponse>()
                     .await?)
-            }).await?;
+            })
+            .await?;
             chapters.append(&mut resp.results);
             if resp.offset + resp.limit >= resp.total {
                 break;
             }
         }
-        Ok(TitleData {
-            chapters
-        })
+        Ok(TitleData { chapters })
     }
 
     fn setup_title_bar(&self, length: u64, context: &ScrapeContext) -> indicatif::ProgressBar {

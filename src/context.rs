@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::throttle::{TicketFuture, Ticketer};
 use crate::common::OpaqueResult;
+use crate::throttle::{TicketFuture, Ticketer};
 
 // TODO: Support lookups for old id format
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
