@@ -3,78 +3,75 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::PathBuf;
+use uuid::Uuid;
+
+use log::debug;
 
 use crate::chapter::ChapterInfo;
 use crate::common::*;
 use crate::context::ScrapeContext;
 use crate::retry::{DownloadError, Result};
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ChapterReferenceData {
-    timestamp: u64,
-    lang_code: String,
-    volume: String,
-    chapter: String,
-    title: String,
-    group_id: usize,
-}
+use crate::api::{chapter::ChapterResponse, manga::MangaFeedResponse};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TitleData {
-    chapter: HashMap<usize, ChapterReferenceData>,
+    chapters: Vec<ChapterResponse>,
 }
 
 impl TitleData {
     fn create_subdir_set(&self, ids: &[usize], base_path: &OsStr) -> Result<HashMap<usize, PathBuf>> {
-        let folder_id_regex = regex::Regex::new("^([0-9]{4,}) - Vol").unwrap();
-        let mut ids: HashSet<_> = ids.iter().collect();
-        let mut paths = HashMap::new();
-        let dir_walker = walkdir::WalkDir::new(base_path)
-            .into_iter()
-            .filter_map(|e| e.ok().filter(|d| d.file_type().is_dir()));
-        for entry in dir_walker {
-            if let Some(cap) = folder_id_regex.captures(&entry.file_name().to_string_lossy()) {
-                let path_str = cap.get(1).unwrap().as_str().trim_start_matches('0');
-                if let Ok(matched_id) = path_str.parse::<usize>() {
-                    if ids.contains(&matched_id) {
-                        ids.remove(&matched_id);
-                        let mut path = PathBuf::from(base_path);
-                        path.push(entry.file_name());
-                        paths.insert(matched_id, path);
-                    }
-                }
-            }
-        }
-        for id in ids {
-            let chapter_info = &self.chapter[id];
+        let mut subdir_set = HashMap::new();
+        for (i, &id) in ids.iter().enumerate() {
+            let dir_num = i + 1;
             let mut path = PathBuf::from(base_path);
-            path.push(escape_path_string(format!(
-                "{:08} - Vol {} - Chapter {} - {} - {}",
-                id, chapter_info.volume, chapter_info.chapter, chapter_info.lang_code, chapter_info.title
-            )));
-            std::fs::create_dir(&path)?;
-            paths.insert(*id, path);
+            let chapter = self.chapters.get(id).unwrap();
+            let chapter_id = chapter.data.id;
+            // TODO: Do this a nice way
+            let chapter_name = if let Some(ref x) = chapter.data.attributes.title {
+                x.as_str()
+            } else {
+                ""
+            };
+            path.push(format!("md{:05} - {} - {}", dir_num, chapter_id, chapter_name));
+            if !path.is_dir() {
+                std::fs::create_dir(&path)?;
+            }
+            subdir_set.insert(id, path);
         }
-        Ok(paths)
+        Ok(subdir_set)
     }
 
-    pub async fn download_for_title(title_id: usize, context: &ScrapeContext) -> Result<Self> {
+    pub async fn download_for_title(title_id: Uuid, context: &ScrapeContext) -> Result<Self> {
         use crate::retry::*;
-        let url = Url::parse(&format!(
-            "https://mangadex.org/api/?id={}&server=null&type=manga",
-            title_id
-        ))
-        .unwrap();
-        let origin = url.origin();
-        let _ticket = context.get_ticket(&origin).await;
-        Ok(with_retry(|| async {
-            Ok(reqwest::get(url.clone())
-                .await?
-                .error_for_status()?
-                .json::<TitleData>()
-                .await?)
+
+        let mut offset = 0usize;
+        let mut chapters: Vec<ChapterResponse> = Vec::new();
+
+        loop {
+            let url = Url::parse(&format!(
+                "https://api.mangadex.org/manga/{}/feed?offset={}&limit=500&translatedLanguage[]={}&order[volume]=asc&order[chapter]=asc",
+                title_id,
+                offset,
+                context.lang_code
+            )).unwrap();
+            debug!("Going to download manga title information from {}", url);
+            let origin = url.origin();
+            let _ticket = context.get_ticket(&origin).await;
+            let mut resp = with_retry(|| async {
+                Ok(reqwest::get(url.clone())
+                    .await?
+                    .error_for_status()?
+                    .json::<MangaFeedResponse>()
+                    .await?)
+            }).await?;
+            chapters.append(&mut resp.results);
+            if resp.offset + resp.limit >= resp.total {
+                break;
+            }
+        }
+        Ok(TitleData {
+            chapters
         })
-        .await?)
     }
 
     fn setup_title_bar(&self, length: u64, context: &ScrapeContext) -> indicatif::ProgressBar {
@@ -88,46 +85,8 @@ impl TitleData {
     }
 
     fn get_chapter_download_order(&self, context: &ScrapeContext) -> Result<Vec<usize>> {
-        let mut chapter_ids: Vec<_> = self
-            .chapter
-            .iter()
-            .filter(|(_, chapter)| {
-                chapter.lang_code == context.lang_code && !context.ignored_groups.contains(&chapter.group_id)
-            })
-            .map(|(a, _)| *a)
-            .collect();
-        chapter_ids.sort();
-        let get_index = |chapter_id: Option<_>| {
-            chapter_id
-                .map(|chapter_id| {
-                    chapter_ids.binary_search(&chapter_id).map_err(|_| {
-                        if self.chapter.contains_key(&chapter_id) {
-                            DownloadError::ChapterIsWrongLanguage(chapter_id)
-                        } else {
-                            DownloadError::NoSuchChapter(chapter_id)
-                        }
-                    })
-                })
-                .transpose()
-        };
-        let start = get_index(context.start_chapter)?.unwrap_or(0);
-        let end = get_index(context.end_chapter)?.unwrap_or(chapter_ids.len());
-        let mut seen = HashSet::new();
-        chapter_ids = chapter_ids
-            .drain(start..end)
-            .filter(|id| {
-                let data = self.chapter.get(&id).unwrap();
-                let description = (data.volume.to_string(), data.chapter.to_string());
-
-                if !seen.contains(&description) {
-                    seen.insert(description);
-                    true
-                } else {
-                    false
-                }
-            })
-            .collect();
-        Ok(chapter_ids)
+        // TODO: Actually reorder things as needed
+        Ok((0..self.chapters.len()).collect::<Vec<_>>())
     }
 
     pub async fn download_to_directory(&self, path: &impl AsRef<OsStr>, context: &ScrapeContext) -> Result<()> {
@@ -136,15 +95,19 @@ impl TitleData {
         let title_bar = self.setup_title_bar(chapter_ids.len() as u64, context);
         let chapter_paths = self.create_subdir_set(&chapter_ids, path.as_ref())?;
 
+        debug!("{:#?}", chapter_paths);
+
         let mut tasks = chapter_ids
             .into_iter()
-            .map(|chapter_id| {
+            .map(|chapter_num| {
                 let title_bar = &title_bar;
                 let chapter_paths = &chapter_paths;
+                let chapter_info = &self.chapters;
                 async move {
-                    let path = chapter_paths.get(&chapter_id).unwrap();
-                    let chapter: ChapterInfo = unimplemented!(); //ChapterData::download_for_chapter(chapter_id, context).await?;
-                    title_bar.println(format!("Got data for {}: {:?}", chapter_id, path));
+                    let path = chapter_paths.get(&chapter_num).unwrap();
+                    let chapter_response = chapter_info.get(chapter_num).unwrap();
+                    let chapter = ChapterInfo::from_chapter_response(chapter_response.clone(), context).await?;
+                    title_bar.println(format!("Got data for {}: {:?}", chapter_num, path));
                     title_bar.set_position(title_bar.position() + 1);
                     if context.verbose {
                         title_bar.println(format!("Chapter API response: {:#?}", chapter));

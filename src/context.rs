@@ -34,7 +34,7 @@ impl ScrapeContext {
         let mut verbose = false;
         let mut download_type_is_title = true;
         let mut resource_id = String::new();
-        let mut lang_code = "gb".to_owned();
+        let mut lang_code = "en".to_owned();
         let mut start_chapter = None;
         let mut end_chapter = None;
         let mut print_info = false;

@@ -6,6 +6,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use crate::api;
+
 use log::debug;
 
 use crate::context::ScrapeContext;
@@ -66,11 +68,28 @@ impl ChapterInfo {
             Ok(reqwest::get(url.clone())
                 .await?
                 .error_for_status()?
-                // .text()
                 .json::<T>()
                 .await?)
         }).await
     }
+
+    pub async fn from_chapter_response(response: api::chapter::ChapterResponse, context: &ScrapeContext) -> Result<Self> {
+        let md_at_home_info_url = Url::parse(&format!(
+            "https://api.mangadex.org/at-home/server/{}",
+            response.data.id
+        )).unwrap();
+
+        debug!("Going to determine owning server address from \"{}\"", md_at_home_info_url);
+        let server_info: api::at_home::ServerInfoResponse = Self::download(md_at_home_info_url, context).await?;
+        Ok(ChapterInfo {
+            server: server_info.base_url,
+            id: response.data.id,
+            page_array: response.data.attributes.data,
+            hash: response.data.attributes.hash,
+            lang_code: response.data.attributes.translated_language.clone(),
+        })
+    }
+
     pub async fn download_for_chapter(chapter_id: Uuid, context: &ScrapeContext) -> Result<Self> {
         use crate::retry::*;
         let chapter_info_url = Url::parse(&format!(
@@ -78,33 +97,9 @@ impl ChapterInfo {
             chapter_id
         )).unwrap();
 
-        let md_at_home_info_url = Url::parse(&format!(
-            "https://api.mangadex.org/at-home/server/{}",
-            chapter_id
-        )).unwrap();
-
         debug!("Going to download chapter info from \"{}\"", chapter_info_url);
-        let resp: crate::api::chapter::ChapterResponse = Self::download(chapter_info_url, context).await?;
-
-        debug!("Going to determine owning server address from \"{}\"", md_at_home_info_url);
-        let origin = md_at_home_info_url.origin();
-        let _ticket = context.get_ticket(&origin).await;
-        let server_info = with_retry(|| async {
-            Ok(reqwest::get(md_at_home_info_url.clone())
-                .await?
-                .error_for_status()?
-                // .text()
-                .json::<crate::api::at_home::ServerInfoResponse>()
-                .await?)
-        })
-            .await?;
-        Ok(ChapterInfo {
-            server: server_info.base_url,
-            id: resp.data.id,
-            page_array: resp.data.attributes.data,
-            hash: resp.data.attributes.hash,
-            lang_code: resp.data.attributes.translated_language.clone(),
-        })
+        let response: api::chapter::ChapterResponse = Self::download(chapter_info_url, context).await?;
+        Self::from_chapter_response(response, context).await
     }
 
     pub async fn download_to_directory(self, path: &impl AsRef<OsStr>, context: &ScrapeContext) -> Result<()> {
@@ -144,11 +139,11 @@ impl ChapterInfo {
                         let path = path_buf.as_path();
                         if path.exists() {
                             if context.verbose {
-                                chapter_bar.println(format!("Skipping {:#?}, since it already exists", path));
+                                debug!("Skipping {:#?}, since it already exists", path);
                             }
                         } else {
                             let _ticket = context.get_priority_ticket(origin).await;
-                            chapter_bar.println(format!("Getting {} as {:#?}", file_url, path));
+                            debug!("Getting {} as {:#?}", file_url, path);
                             let chapter_data =
                                 with_retry(|| async { Ok(download_image(&url, context).await?) }).await?;
                             // Create output file
