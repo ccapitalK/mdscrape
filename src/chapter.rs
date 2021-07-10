@@ -1,12 +1,16 @@
 use reqwest::Url;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, de::DeserializeOwned, Serialize};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::rc::Rc;
+
+use log::debug;
 
 use crate::context::ScrapeContext;
 use crate::retry::{with_retry, DownloadError, Result};
+use uuid::Uuid;
 
 async fn download_image(url: &Url, context: &ScrapeContext) -> Result<Vec<u8>> {
     use tokio::stream::StreamExt;
@@ -45,35 +49,62 @@ async fn download_image(url: &Url, context: &ScrapeContext) -> Result<Vec<u8>> {
     Ok(collected_data)
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ChapterData {
-    id: usize,
+#[derive(Clone, Debug)]
+pub struct ChapterInfo {
+    id: Uuid,
     lang_code: String,
     hash: String,
     server: String,
-    page_array: Vec<String>,
-    manga_id: usize,
-    group_id: usize,
+    page_array: Rc<Vec<String>>,
 }
 
-impl ChapterData {
-    pub async fn download_for_chapter(chapter_id: usize, context: &ScrapeContext) -> Result<Self> {
-        use crate::retry::*;
-        let url = Url::parse(&format!(
-            "https://mangadex.org/api/?id={}&server=null&type=chapter",
-            chapter_id
-        ))
-        .unwrap();
+impl ChapterInfo {
+    async fn download<T>(url: Url, context: &ScrapeContext) -> Result<T> where T: DeserializeOwned {
         let origin = url.origin();
         let _ticket = context.get_ticket(&origin).await;
-        Ok(with_retry(|| async {
+        with_retry(|| async {
             Ok(reqwest::get(url.clone())
                 .await?
                 .error_for_status()?
-                .json::<ChapterData>()
+                // .text()
+                .json::<T>()
+                .await?)
+        }).await
+    }
+    pub async fn download_for_chapter(chapter_id: Uuid, context: &ScrapeContext) -> Result<Self> {
+        use crate::retry::*;
+        let chapter_info_url = Url::parse(&format!(
+            "https://api.mangadex.org/chapter/{}",
+            chapter_id
+        )).unwrap();
+
+        let md_at_home_info_url = Url::parse(&format!(
+            "https://api.mangadex.org/at-home/server/{}",
+            chapter_id
+        )).unwrap();
+
+        debug!("Going to download chapter info from \"{}\"", chapter_info_url);
+        let resp: crate::api::chapter::ChapterResponse = Self::download(chapter_info_url, context).await?;
+
+        debug!("Going to determine owning server address from \"{}\"", md_at_home_info_url);
+        let origin = md_at_home_info_url.origin();
+        let _ticket = context.get_ticket(&origin).await;
+        let server_info = with_retry(|| async {
+            Ok(reqwest::get(md_at_home_info_url.clone())
+                .await?
+                .error_for_status()?
+                // .text()
+                .json::<crate::api::at_home::ServerInfoResponse>()
                 .await?)
         })
-        .await?)
+            .await?;
+        Ok(ChapterInfo {
+            server: server_info.base_url,
+            id: resp.data.id,
+            page_array: resp.data.attributes.data,
+            hash: resp.data.attributes.hash,
+            lang_code: resp.data.attributes.translated_language.clone(),
+        })
     }
 
     pub async fn download_to_directory(self, path: &impl AsRef<OsStr>, context: &ScrapeContext) -> Result<()> {
@@ -89,9 +120,10 @@ impl ChapterData {
             chapter_bar.set_style(style);
             chapter_bar
         });
-        let url_base = format!("{}{}", self.server, self.hash);
+        let url_base = format!("{}/data/{}", self.server, self.hash);
         let origin = Url::parse(&url_base)?.origin();
         context.get_ticket(&origin).await;
+        debug!("Determined url_base as {}", url_base);
         let mut tasks = self
             .page_array
             .iter()
@@ -101,6 +133,7 @@ impl ChapterData {
                 let url_base = &url_base;
                 let origin = &origin;
                 async move {
+                    debug!("Async closure called");
                     let mut path_buf = PathBuf::from(&path);
                     // Determine resource names
                     let file_url = format!("{}/{}", url_base, filename);

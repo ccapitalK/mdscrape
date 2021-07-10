@@ -4,14 +4,19 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::throttle::{TicketFuture, Ticketer};
+use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+use crate::throttle::{TicketFuture, Ticketer};
+use crate::common::OpaqueResult;
+
+// TODO: Support lookups for old id format
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum DownloadType {
-    Title(usize),
-    Chapter(usize),
+    Title(Uuid),
+    Chapter(Uuid),
 }
 
+#[derive(Debug)]
 pub struct ScrapeContext {
     pub verbose: bool,
     pub lang_code: String,
@@ -28,7 +33,7 @@ impl ScrapeContext {
     pub fn from_args() -> Self {
         let mut verbose = false;
         let mut download_type_is_title = true;
-        let mut resource_id = 0usize;
+        let mut resource_id = String::new();
         let mut lang_code = "gb".to_owned();
         let mut start_chapter = None;
         let mut end_chapter = None;
@@ -98,9 +103,9 @@ impl ScrapeContext {
             end_chapter,
             show_progress,
             download_type: if download_type_is_title {
-                DownloadType::Title(resource_id)
+                DownloadType::Title(Uuid::parse_str(&resource_id).expect("Failed to parse title UUID"))
             } else {
-                DownloadType::Chapter(resource_id)
+                DownloadType::Chapter(Uuid::parse_str(&resource_id).expect("Failed to parse chapter UUID"))
             },
             ignored_groups: if ignored_groups_str.len() > 0 {
                 ignored_groups_str

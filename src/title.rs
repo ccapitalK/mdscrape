@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-use crate::chapter::ChapterData;
+use crate::chapter::ChapterInfo;
 use crate::common::*;
 use crate::context::ScrapeContext;
 use crate::retry::{DownloadError, Result};
@@ -143,7 +143,7 @@ impl TitleData {
                 let chapter_paths = &chapter_paths;
                 async move {
                     let path = chapter_paths.get(&chapter_id).unwrap();
-                    let chapter = ChapterData::download_for_chapter(chapter_id, context).await?;
+                    let chapter: ChapterInfo = unimplemented!(); //ChapterData::download_for_chapter(chapter_id, context).await?;
                     title_bar.println(format!("Got data for {}: {:?}", chapter_id, path));
                     title_bar.set_position(title_bar.position() + 1);
                     if context.verbose {
