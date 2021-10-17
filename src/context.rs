@@ -60,7 +60,7 @@ impl ScrapeContext {
             parser.refer(&mut lang_code).add_option(
                 &["-l", "--lang-code"],
                 Store,
-                "The language code, defaults to gb (Great Britain/English)",
+                "The language code, defaults to en (English)",
             );
             parser.refer(&mut start_chapter).add_option(
                 &["-s", "--start-chapter"],

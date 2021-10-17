@@ -20,6 +20,7 @@ pub struct ChapterData {
     #[serde(rename = "type")]
     pub data_type: String,
     pub attributes: ChapterAttributes,
+    pub relationships: Vec<ChapterRelationShip>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -30,6 +31,6 @@ pub struct ChapterRelationShip {}
 #[serde(rename_all = "camelCase")]
 pub struct ChapterResponse {
     pub result: String,
+    pub response: String,
     pub data: ChapterData,
-    pub relationships: Vec<ChapterRelationShip>,
 }

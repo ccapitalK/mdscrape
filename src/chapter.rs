@@ -67,15 +67,18 @@ impl ChapterInfo {
     {
         let origin = url.origin();
         let _ticket = context.get_ticket(&origin).await;
-        with_retry(|| async { Ok(reqwest::get(url.clone()).await?.error_for_status()?.json::<T>().await?) }).await
+        with_retry(|| async {
+            let resp = reqwest::get(url.clone()).await?.error_for_status()?;
+            Ok(resp.json::<T>().await?)
+        }).await
     }
 
-    pub async fn from_chapter_response(
-        response: api::chapter::ChapterResponse,
+    pub async fn from_chapter_data(
+        data: api::chapter::ChapterData,
         context: &ScrapeContext,
     ) -> Result<Self> {
         let md_at_home_info_url =
-            Url::parse(&format!("https://api.mangadex.org/at-home/server/{}", response.data.id)).unwrap();
+            Url::parse(&format!("https://api.mangadex.org/at-home/server/{}", data.id)).unwrap();
 
         debug!(
             "Going to determine owning server address from \"{}\"",
@@ -84,11 +87,18 @@ impl ChapterInfo {
         let server_info: api::at_home::ServerInfoResponse = Self::download(md_at_home_info_url, context).await?;
         Ok(ChapterInfo {
             server: server_info.base_url,
-            id: response.data.id,
-            page_array: response.data.attributes.data,
-            hash: response.data.attributes.hash,
-            lang_code: response.data.attributes.translated_language.clone(),
+            id: data.id,
+            page_array: data.attributes.data,
+            hash: data.attributes.hash,
+            lang_code: data.attributes.translated_language.clone(),
         })
+    }
+
+    pub async fn from_chapter_response(
+        response: api::chapter::ChapterResponse,
+        context: &ScrapeContext,
+    ) -> Result<Self> {
+        Self::from_chapter_data(response.data, context).await
     }
 
     pub async fn download_for_chapter(chapter_id: Uuid, context: &ScrapeContext) -> Result<Self> {
