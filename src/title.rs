@@ -18,25 +18,42 @@ pub struct TitleData {
     chapters: Vec<ChapterData>,
 }
 
+fn sanitize_chapter_name(name: &str) -> String {
+    let mut sanitized_name = String::new();
+    for c in name.chars() {
+        sanitized_name.push(match c {
+            '\x00' => '0',
+            '/' => '\\',
+            v => v,
+        });
+    }
+    sanitized_name
+}
+
 impl TitleData {
     fn create_subdir_set(&self, base_path: &OsStr) -> Result<Vec<PathBuf>> {
         let mut subdir_set = Vec::new();
+        debug!("Going to setup {} paths", self.chapters.len());
         for (i, chapter) in self.chapters.iter().enumerate() {
             let dir_num = i + 1;
             let mut path = PathBuf::from(base_path);
             let chapter_id = chapter.id;
             // let chapter_name: &str = chapter.data.attributes.title.as_ref().unwrap_or("");
             let chapter_name = if let Some(ref x) = chapter.attributes.title {
-                x.as_str()
+                sanitize_chapter_name(x.as_str())
             } else {
-                ""
+                format!("")
             };
+            debug!("Creating pathbuf from {:?}, {:?}, {:?}, {:?}", path, dir_num, chapter_id, chapter_name);
             path.push(format!("md{:05} - {} - {}", dir_num, chapter_id, chapter_name));
+            debug!("Chose path {:?}", path);
             if !path.is_dir() {
                 std::fs::create_dir(&path)?;
+                debug!("Created path {:?}", path);
             }
             subdir_set.push(path);
         }
+        debug!("Successfully chose paths!");
         Ok(subdir_set)
     }
 
@@ -71,6 +88,7 @@ impl TitleData {
                 break;
             }
         }
+        debug!("Got Chapters");
         Ok(TitleData { chapters })
     }
 
@@ -87,6 +105,7 @@ impl TitleData {
     pub async fn download_to_directory(self, path: &impl AsRef<OsStr>, context: &ScrapeContext) -> Result<()> {
         use futures::stream::{FuturesUnordered, StreamExt};
         let title_bar = self.setup_title_bar(self.chapters.len() as u64, context);
+        debug!("Determining chapter paths");
         let chapter_paths = self.create_subdir_set(path.as_ref())?;
 
         debug!("{:#?}", chapter_paths);
