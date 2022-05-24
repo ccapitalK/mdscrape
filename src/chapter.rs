@@ -70,15 +70,12 @@ impl ChapterInfo {
         with_retry(|| async {
             let resp = reqwest::get(url.clone()).await?.error_for_status()?;
             Ok(resp.json::<T>().await?)
-        }).await
+        })
+        .await
     }
 
-    pub async fn from_chapter_data(
-        data: api::chapter::ChapterData,
-        context: &ScrapeContext,
-    ) -> Result<Self> {
-        let md_at_home_info_url =
-            Url::parse(&format!("https://api.mangadex.org/at-home/server/{}", data.id)).unwrap();
+    pub async fn from_chapter_data(data: api::chapter::ChapterData, context: &ScrapeContext) -> Result<Self> {
+        let md_at_home_info_url = Url::parse(&format!("https://api.mangadex.org/at-home/server/{}", data.id)).unwrap();
 
         debug!(
             "Going to determine owning server address from \"{}\"",
@@ -88,8 +85,8 @@ impl ChapterInfo {
         Ok(ChapterInfo {
             server: server_info.base_url,
             id: data.id,
-            page_array: data.attributes.data,
-            hash: data.attributes.hash,
+            page_array: server_info.chapter.data,
+            hash: server_info.chapter.hash,
             lang_code: data.attributes.translated_language.clone(),
         })
     }

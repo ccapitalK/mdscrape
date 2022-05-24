@@ -44,7 +44,10 @@ impl TitleData {
             } else {
                 format!("")
             };
-            debug!("Creating pathbuf from {:?}, {:?}, {:?}, {:?}", path, dir_num, chapter_id, chapter_name);
+            debug!(
+                "Creating pathbuf from {:?}, {:?}, {:?}, {:?}",
+                path, dir_num, chapter_id, chapter_name
+            );
             path.push(format!("md{:05} - {} - {}", dir_num, chapter_id, chapter_name));
             debug!("Chose path {:?}", path);
             if !path.is_dir() {
@@ -110,7 +113,8 @@ impl TitleData {
 
         debug!("{:#?}", chapter_paths);
 
-        let mut tasks = self.chapters
+        let mut tasks = self
+            .chapters
             .into_iter()
             .zip(chapter_paths.into_iter())
             .map(|(chapter_data, path)| {

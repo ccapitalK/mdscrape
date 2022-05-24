@@ -47,3 +47,25 @@ pub struct MangaResponse {
     pub result: String,
     pub data: MangaData,
 }
+
+#[cfg(test)]
+mod test {
+    #[tokio::test]
+    async fn can_get_manga_response() -> Result<(), reqwest::Error> {
+        // Tomo-chan wa onna no ko!
+        let title_id = "76ee7069-23b4-493c-bc44-34ccbf3051a8";
+        let offset = 2;
+        let lang_code = "en";
+        let url = url::Url::parse(&format!(
+            "https://api.mangadex.org/manga/{}/feed?offset={}&limit=10&translatedLanguage[]={}&order[volume]=asc&order[chapter]=asc",
+            title_id,
+            offset,
+            lang_code
+        )).unwrap();
+        let resp = reqwest::get(url.clone())
+            .await?
+            .json::<super::MangaFeedResponse>()
+            .await?;
+        Ok(())
+    }
+}
