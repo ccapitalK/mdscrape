@@ -167,13 +167,13 @@ mod test {
     async fn test_throttle_ticketing() {
         let ticketer = RefCell::new(Ticketer::new(2, 3));
         {
-            let _ticket1 = TicketFuture::new(&"a", &ticketer).await;
+            let _ticket1 = TicketFuture::new(&"a", &ticketer, false).await;
             {
-                let _ticket2 = TicketFuture::new(&"a", &ticketer).await;
+                let _ticket2 = TicketFuture::new(&"a", &ticketer, false).await;
                 {
                     assert!(ticketer.borrow_mut().try_acquire(&"a") == false);
                 }
-                let _ticket3 = TicketFuture::new(&"b", &ticketer).await;
+                let _ticket3 = TicketFuture::new(&"b", &ticketer, false).await;
                 {
                     assert!(ticketer.borrow_mut().try_acquire(&"a") == false);
                     assert!(ticketer.borrow_mut().try_acquire(&"b") == false);
@@ -182,8 +182,8 @@ mod test {
                     assert!(ticketer.borrow().tickets.len() == 2);
                 }
             }
-            let _ticket4 = TicketFuture::new(&"c", &ticketer).await;
-            let _ticket4 = TicketFuture::new(&"c", &ticketer).await;
+            let _ticket4 = TicketFuture::new(&"c", &ticketer, false).await;
+            let _ticket4 = TicketFuture::new(&"c", &ticketer, false).await;
             {
                 assert!(ticketer.borrow_mut().try_acquire(&"a") == false);
                 assert!(ticketer.borrow_mut().try_acquire(&"b") == false);
