@@ -23,7 +23,7 @@ use title::TitleData;
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-#[tokio::main(core_threads = 1)]
+#[tokio::main(worker_threads = 1)]
 async fn main() -> OpaqueResult<()> {
     SimpleLogger::new().with_level(LevelFilter::Warn).init().unwrap();
     // let tui = TUI::new()?;

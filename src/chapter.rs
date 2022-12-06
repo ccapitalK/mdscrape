@@ -15,7 +15,7 @@ use crate::retry::{with_retry, DownloadError, Result};
 use uuid::Uuid;
 
 async fn download_image(url: &Url, context: &ScrapeContext) -> Result<Vec<u8>> {
-    use tokio::stream::StreamExt;
+    use futures::StreamExt;
     let mut collected_data = Vec::new();
     // Make request
     let response = reqwest::get(url.clone()).await?.error_for_status()?;

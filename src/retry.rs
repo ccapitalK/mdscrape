@@ -78,7 +78,7 @@ where
             Err(e) if e.is_permanent() => return Err(e),
             e => {
                 if count < 4 {
-                    tokio::time::delay_for(duration.mul_f64(rng.gen())).await;
+                    tokio::time::sleep(duration.mul_f64(rng.gen())).await;
                     duration *= 3;
                 } else {
                     return e;
