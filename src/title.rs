@@ -86,8 +86,8 @@ impl TitleData {
             .await?;
             let num_just_added = resp.data.len();
             chapters.append(&mut resp.data);
-            resp.offset += num_just_added;
-            if resp.offset >= resp.total {
+            offset += num_just_added;
+            if offset >= resp.total {
                 break;
             }
         }
