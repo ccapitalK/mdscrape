@@ -2,6 +2,7 @@
 
 mod api;
 mod chapter;
+mod client;
 mod common;
 mod context;
 mod retry;
