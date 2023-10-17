@@ -77,7 +77,9 @@ impl TitleData {
             let origin = url.origin();
             let _ticket = context.get_ticket(&origin).await;
             let mut resp = with_retry(|| async {
-                Ok(reqwest::get(url.clone())
+                Ok(CLIENT
+                    .get(url.clone())
+                    .send()
                     .await?
                     .error_for_status()?
                     .json::<MangaFeedResponse>()

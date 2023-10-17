@@ -21,9 +21,13 @@ mod test {
     #[tokio::test]
     async fn can_get_server_info_response() -> Result<(), reqwest::Error> {
         // Tomo-chan wa onna no ko! chapter 953.5
+        // Url: https://api.mangadex.org/at-home/server/417d64e1-6c88-48f8-b507-ad43e9636888
         let chapter_id = "417d64e1-6c88-48f8-b507-ad43e9636888";
         let url = url::Url::parse(&format!("https://api.mangadex.org/at-home/server/{}", chapter_id,)).unwrap();
-        let resp = reqwest::get(url.clone())
+        crate::client::CLIENT
+            .clone()
+            .get(url.clone())
+            .send()
             .await?
             .json::<super::ServerInfoResponse>()
             .await?;

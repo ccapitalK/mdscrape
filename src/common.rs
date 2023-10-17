@@ -1,3 +1,5 @@
+pub use crate::client::CLIENT;
+
 pub type OpaqueError = Box<dyn std::error::Error>;
 pub type OpaqueResult<T> = Result<T, OpaqueError>;
 

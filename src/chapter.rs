@@ -10,6 +10,7 @@ use crate::api;
 
 use log::debug;
 
+use crate::common::*;
 use crate::context::ScrapeContext;
 use crate::retry::{with_retry, DownloadError, Result};
 use uuid::Uuid;
@@ -18,7 +19,7 @@ async fn download_image(url: &Url, context: &ScrapeContext) -> Result<Vec<u8>> {
     use futures::StreamExt;
     let mut collected_data = Vec::new();
     // Make request
-    let response = reqwest::get(url.clone()).await?.error_for_status()?;
+    let response = CLIENT.get(url.clone()).send().await?.error_for_status()?;
     // Get response size, if known so progress bar can render
     let content_length = response.content_length();
     // Get data
@@ -68,7 +69,7 @@ impl ChapterInfo {
         let origin = url.origin();
         let _ticket = context.get_ticket(&origin).await;
         with_retry(|| async {
-            let resp = reqwest::get(url.clone()).await?.error_for_status()?;
+            let resp = CLIENT.get(url.clone()).send().await?.error_for_status()?;
             Ok(resp.json::<T>().await?)
         })
         .await

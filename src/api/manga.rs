@@ -53,6 +53,7 @@ mod test {
     #[tokio::test]
     async fn can_get_manga_response() -> Result<(), reqwest::Error> {
         // Tomo-chan wa onna no ko!
+        // Url: https://api.mangadex.org/manga/76ee7069-23b4-493c-bc44-34ccbf3051a8/feed?offset=2&limit=10&translatedLanguage[]=en&order[volume]=asc&order[chapter]=asc
         let title_id = "76ee7069-23b4-493c-bc44-34ccbf3051a8";
         let offset = 2;
         let lang_code = "en";
@@ -62,7 +63,10 @@ mod test {
             offset,
             lang_code
         )).unwrap();
-        let resp = reqwest::get(url.clone())
+        crate::client::CLIENT
+            .clone()
+            .get(url.clone())
+            .send()
             .await?
             .json::<super::MangaFeedResponse>()
             .await?;
