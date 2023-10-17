@@ -1,6 +1,6 @@
 [package]
 name = "mdscrape"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Sahan Fernando <sahan.h.fernando@gmail.com>"]
 edition = "2018"
 
