@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::common::OpaqueResult;
+
 use crate::throttle::{TicketFuture, Ticketer};
 
 // TODO: Support lookups for old id format
@@ -107,14 +107,12 @@ impl ScrapeContext {
             } else {
                 DownloadType::Chapter(Uuid::parse_str(&resource_id).expect("Failed to parse chapter UUID"))
             },
-            ignored_groups: if ignored_groups_str.len() > 0 {
+            ignored_groups: if !ignored_groups_str.is_empty() {
                 ignored_groups_str
-                    .split(",")
+                    .split(',')
                     .map(|v| {
-                        v.parse::<usize>().expect(&format!(
-                            "Failed to parse ignored_group [expected integer group id]: {}",
-                            v
-                        ))
+                        v.parse::<usize>().unwrap_or_else(|_| panic!("Failed to parse ignored_group [expected integer group id]: {}",
+                            v))
                     })
                     .collect()
             } else {

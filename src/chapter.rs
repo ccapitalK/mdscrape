@@ -1,5 +1,5 @@
 use reqwest::Url;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Write;
@@ -100,7 +100,7 @@ impl ChapterInfo {
     }
 
     pub async fn download_for_chapter(chapter_id: Uuid, context: &ScrapeContext) -> Result<Self> {
-        use crate::retry::*;
+        
         let chapter_info_url = Url::parse(&format!("https://api.mangadex.org/chapter/{}", chapter_id)).unwrap();
 
         debug!("Going to download chapter info from \"{}\"", chapter_info_url);
@@ -139,7 +139,7 @@ impl ChapterInfo {
                     // Determine resource names
                     let file_url = format!("{}/{}", url_base, filename);
                     let url = Url::parse(&file_url)?;
-                    let extension = filename.split(".").last().unwrap_or("png");
+                    let extension = filename.split('.').last().unwrap_or("png");
                     path_buf.push(format!("{:04}.{}", (i + 1), extension));
                     {
                         let path = path_buf.as_path();
@@ -151,7 +151,7 @@ impl ChapterInfo {
                             let _ticket = context.get_priority_ticket(origin).await;
                             debug!("Getting {} as {:#?}", file_url, path);
                             let chapter_data =
-                                with_retry(|| async { Ok(download_image(&url, context).await?) }).await?;
+                                with_retry(|| async { download_image(&url, context).await }).await?;
                             // Create output file
                             let mut out_file = File::create(path)?;
                             // Write data

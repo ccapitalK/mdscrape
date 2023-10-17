@@ -1,4 +1,4 @@
-use log::{Level, Log, Metadata, Record};
+use log::{Log, Metadata, Record};
 
 pub enum RenderTarget {
     Stdout,
@@ -18,12 +18,12 @@ impl TUI {
 }
 
 impl Log for TUI {
-    fn enabled(&self, metadata: &Metadata) -> bool {
+    fn enabled(&self, _metadata: &Metadata) -> bool {
         // TODO: this
         false
     }
     fn log(&self, record: &Record) {
-        if self.enabled(&record.metadata()) {
+        if self.enabled(record.metadata()) {
             // TODO: this
         }
     }

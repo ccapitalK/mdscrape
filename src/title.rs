@@ -1,6 +1,6 @@
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -42,7 +42,7 @@ impl TitleData {
             let chapter_name = if let Some(ref x) = chapter.attributes.title {
                 sanitize_chapter_name(x.as_str())
             } else {
-                format!("")
+                String::new()
             };
             debug!(
                 "Creating pathbuf from {:?}, {:?}, {:?}, {:?}",

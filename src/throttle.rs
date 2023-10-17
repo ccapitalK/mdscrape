@@ -105,7 +105,7 @@ where
     fn wake_one(&mut self) {
         for i in 0..self.parked_tasks.len() {
             let key = &self.parked_tasks[i].key;
-            if self.tickets.get(&key).filter(|v| **v == self.per_origin_threshold) == None {
+            if self.tickets.get(key).filter(|v| **v == self.per_origin_threshold).is_none() {
                 let task = if self.parked_tasks[i].high_priority {
                     self.parked_tasks.swap_remove_front(i).unwrap()
                 } else {
@@ -171,13 +171,13 @@ mod test {
             {
                 let _ticket2 = TicketFuture::new(&"a", &ticketer, false).await;
                 {
-                    assert!(ticketer.borrow_mut().try_acquire(&"a") == false);
+                    assert!(!ticketer.borrow_mut().try_acquire(&"a"));
                 }
                 let _ticket3 = TicketFuture::new(&"b", &ticketer, false).await;
                 {
-                    assert!(ticketer.borrow_mut().try_acquire(&"a") == false);
-                    assert!(ticketer.borrow_mut().try_acquire(&"b") == false);
-                    assert!(ticketer.borrow_mut().try_acquire(&"c") == false);
+                    assert!(!ticketer.borrow_mut().try_acquire(&"a"));
+                    assert!(!ticketer.borrow_mut().try_acquire(&"b"));
+                    assert!(!ticketer.borrow_mut().try_acquire(&"c"));
                     assert!(ticketer.borrow().global_count == 3);
                     assert!(ticketer.borrow().tickets.len() == 2);
                 }
@@ -185,11 +185,11 @@ mod test {
             let _ticket4 = TicketFuture::new(&"c", &ticketer, false).await;
             let _ticket4 = TicketFuture::new(&"c", &ticketer, false).await;
             {
-                assert!(ticketer.borrow_mut().try_acquire(&"a") == false);
-                assert!(ticketer.borrow_mut().try_acquire(&"b") == false);
+                assert!(!ticketer.borrow_mut().try_acquire(&"a"));
+                assert!(!ticketer.borrow_mut().try_acquire(&"b"));
             }
         }
         assert!(ticketer.borrow().global_count == 0);
-        assert!(ticketer.borrow().tickets.len() == 0);
+        assert!(ticketer.borrow().tickets.is_empty());
     }
 }
