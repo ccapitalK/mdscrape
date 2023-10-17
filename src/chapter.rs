@@ -1,5 +1,5 @@
 use reqwest::Url;
-use serde::{de::DeserializeOwned};
+use serde::de::DeserializeOwned;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Write;
@@ -54,8 +54,8 @@ async fn download_image(url: &Url, context: &ScrapeContext) -> Result<Vec<u8>> {
 
 #[derive(Clone, Debug)]
 pub struct ChapterInfo {
-    id: Uuid,
-    lang_code: String,
+    _id: Uuid,
+    _lang_code: String,
     hash: String,
     server: String,
     page_array: Rc<Vec<String>>,
@@ -85,10 +85,10 @@ impl ChapterInfo {
         let server_info: api::at_home::ServerInfoResponse = Self::download(md_at_home_info_url, context).await?;
         Ok(ChapterInfo {
             server: server_info.base_url,
-            id: data.id,
+            _id: data.id,
             page_array: server_info.chapter.data,
             hash: server_info.chapter.hash,
-            lang_code: data.attributes.translated_language.clone(),
+            _lang_code: data.attributes.translated_language.clone(),
         })
     }
 
@@ -110,7 +110,6 @@ impl ChapterInfo {
 
     pub async fn download_to_directory(self, path: &impl AsRef<OsStr>, context: &ScrapeContext) -> Result<()> {
         use futures::stream::{FuturesUnordered, StreamExt};
-        use std::rc::Rc;
         let chapter_bar = Rc::new({
             let style = indicatif::ProgressStyle::default_bar()
                 .template("<{elapsed_precise}> [{bar:80.yellow/red}] {pos}/{len} images downloaded")
