@@ -22,7 +22,6 @@ struct TicketPartition {
     // Needed to be arced to own a permit, apparently
     lock: Arc<tokio::sync::Semaphore>,
     locked_till: Option<Instant>,
-    policy: Arc<TicketPolicy>,
 }
 
 pub struct Ticketer<Origin: Clone + Hash + Eq> {
@@ -43,7 +42,7 @@ impl<Origin: Clone + Hash + Eq> Ticketer<Origin> {
         Ticketer {
             global_lock: Arc::new(Semaphore::new(policy.max_global)),
             state: Default::default(),
-            policy: Arc::new(policy.clone()),
+            policy: Arc::new(*policy),
         }
     }
 
@@ -51,7 +50,6 @@ impl<Origin: Clone + Hash + Eq> Ticketer<Origin> {
         TicketPartition {
             lock: Arc::new(Semaphore::new(self.policy.max_per_site)),
             locked_till: None,
-            policy: self.policy.clone(),
         }
     }
 
@@ -83,6 +81,14 @@ impl<Origin: Clone + Hash + Eq> Ticketer<Origin> {
             .or_insert(self.default_origin_details())
             .lock
             .clone()
+    }
+
+    #[cfg(test)]
+    fn ensure_exists(&self, origin: &Origin) {
+        // We won't try to deal with lock poisoning
+        let mut guard = self.state.lock().unwrap();
+        // TODO-OPTIMIZE away the clone
+        guard.entry(origin.clone()).or_insert(self.default_origin_details());
     }
 
     #[cfg(test)]

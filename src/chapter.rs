@@ -148,12 +148,12 @@ impl ChapterInfo {
                         } else {
                             debug!("Getting {} as {:#?}", file_url, path);
                             let chapter_data = context
-                                .with_retry_for_origin(&origin, || async { download_image(&url, context).await })
+                                .with_retry_for_origin(origin, || async { download_image(&url, context).await })
                                 .await?;
                             // Create output file
                             let mut out_file = File::create(path)?;
                             // Write data
-                            out_file.write(&chapter_data)?;
+                            out_file.write_all(&chapter_data)?;
                         }
                     }
                     // Update bar
