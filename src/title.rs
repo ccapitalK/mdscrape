@@ -61,8 +61,6 @@ impl TitleData {
     }
 
     pub async fn download_for_title(title_id: Uuid, context: &ScrapeContext) -> Result<Self> {
-        use crate::retry::*;
-
         let mut offset = 0usize;
         let mut chapters: Vec<ChapterData> = Vec::new();
 
@@ -75,17 +73,17 @@ impl TitleData {
             )).unwrap();
             debug!("Going to download manga title information from {}", url);
             let origin = url.origin();
-            let _ticket = context.get_ticket(&origin).await;
-            let mut resp = with_retry(|| async {
-                Ok(CLIENT
-                    .get(url.clone())
-                    .send()
-                    .await?
-                    .error_for_status()?
-                    .json::<MangaFeedResponse>()
-                    .await?)
-            })
-            .await?;
+            let mut resp = context
+                .with_retry_for_origin(&origin, || async {
+                    Ok(CLIENT
+                        .get(url.clone())
+                        .send()
+                        .await?
+                        .error_for_status()?
+                        .json::<MangaFeedResponse>()
+                        .await?)
+                })
+                .await?;
             let num_just_added = resp.data.len();
             chapters.append(&mut resp.data);
             offset += num_just_added;

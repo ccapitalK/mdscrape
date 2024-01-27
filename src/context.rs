@@ -6,8 +6,10 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-
-use crate::throttle::{TicketFuture, Ticketer};
+use crate::{
+    retry::{self, DownloadError},
+    throttle::{Ticket, TicketPolicy, Ticketer},
+};
 
 // TODO: Support lookups for old id format
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -26,7 +28,7 @@ pub struct ScrapeContext {
     pub download_type: DownloadType,
     pub show_progress: bool,
     pub progress: Arc<indicatif::MultiProgress>,
-    ticketer: RefCell<Ticketer<Origin>>,
+    ticketer: Ticketer<Origin>,
 }
 
 impl ScrapeContext {
@@ -42,6 +44,7 @@ impl ScrapeContext {
         let mut ignored_groups_str = String::new();
         let mut global_threshold = 1;
         let mut per_origin_threshold = 1;
+        let mut wait_time = 150_000.0f64;
         {
             use argparse::{ArgumentParser, Store, StoreFalse, StoreOption, StoreTrue};
             let mut parser = ArgumentParser::new();
@@ -85,6 +88,11 @@ impl ScrapeContext {
                 Store,
                 "Max number of simultaneous connections per origin",
             );
+            parser.refer(&mut wait_time).add_option(
+                &["-w", "--rate-limit-wait-time"],
+                Store,
+                "Time to wait (in seconds) after being rate limited",
+            );
             parser
                 .refer(&mut resource_id)
                 .add_argument("resource id", Store, "The resource id (the number in the URL)")
@@ -96,6 +104,13 @@ impl ScrapeContext {
             );
             parser.parse_args_or_exit();
         }
+        let wait_seconds = (wait_time / 1000.0) as u64;
+        let wait_nsec = (wait_time % 1000.0) as u32 * 1_000_000;
+        let policy = TicketPolicy {
+            max_global: global_threshold,
+            max_per_site: per_origin_threshold,
+            rate_limit_wait_time: tokio::time::Duration::new(wait_seconds, wait_nsec),
+        };
         ScrapeContext {
             verbose,
             lang_code,
@@ -111,21 +126,35 @@ impl ScrapeContext {
                 ignored_groups_str
                     .split(',')
                     .map(|v| {
-                        v.parse::<usize>().unwrap_or_else(|_| panic!("Failed to parse ignored_group [expected integer group id]: {}",
-                            v))
+                        v.parse::<usize>().unwrap_or_else(|_| {
+                            panic!("Failed to parse ignored_group [expected integer group id]: {}", v)
+                        })
                     })
                     .collect()
             } else {
                 Default::default()
             },
             progress: Arc::new(indicatif::MultiProgress::new()),
-            ticketer: RefCell::new(Ticketer::new(per_origin_threshold, global_threshold)),
+            ticketer: Ticketer::new(&policy),
         }
     }
-    pub fn get_ticket<'origin>(&'origin self, origin: &'origin Origin) -> TicketFuture<'origin, Origin> {
-        TicketFuture::new(origin, &self.ticketer, false)
+
+    pub async fn get_ticket(&self, origin: &Origin) -> Ticket {
+        self.ticketer.get_ticket(origin).await
     }
-    pub fn get_priority_ticket<'origin>(&'origin self, origin: &'origin Origin) -> TicketFuture<'origin, Origin> {
-        TicketFuture::new(origin, &self.ticketer, true)
+
+    pub async fn with_retry_for_origin<T, F>(&self, origin: &Origin, f: impl Fn() -> F) -> Result<T, DownloadError>
+    where
+        F: futures::Future<Output = Result<T, DownloadError>>,
+    {
+        log::info!("With retry for origin {:?}", origin);
+        let ticket = RefCell::new(Some(self.get_ticket(origin).await));
+        retry::with_retry(f, || async {
+            self.ticketer.mark_origin_locked(origin);
+            // Reacquire the ticket
+            ticket.replace(None);
+            ticket.replace(Some(self.get_ticket(origin).await));
+        })
+        .await
     }
 }

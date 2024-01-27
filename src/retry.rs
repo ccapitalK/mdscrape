@@ -2,6 +2,8 @@ use core::future::Future;
 use std::convert::From;
 use tokio::time::Duration;
 
+const MANGADEX_RATE_LIMIT_CODE: u16 = 429;
+
 #[derive(Debug)]
 pub enum DownloadError {
     IOError(std::io::Error),
@@ -9,6 +11,7 @@ pub enum DownloadError {
     ChapterIsWrongLanguage(usize),
     ParseError(url::ParseError),
     ReqwestError(reqwest::Error),
+    RateLimitError(reqwest::Error),
 }
 
 pub type Result<T> = std::result::Result<T, DownloadError>;
@@ -27,7 +30,11 @@ impl From<url::ParseError> for DownloadError {
 
 impl From<reqwest::Error> for DownloadError {
     fn from(e: reqwest::Error) -> Self {
-        DownloadError::ReqwestError(e)
+        if e.status().map(|c| c.as_u16()) == Some(MANGADEX_RATE_LIMIT_CODE) {
+            DownloadError::RateLimitError(e)
+        } else {
+            DownloadError::ReqwestError(e)
+        }
     }
 }
 
@@ -41,6 +48,7 @@ impl std::fmt::Display for DownloadError {
                 write!(f, "Chapter has wrong lang code: {}", chapter_id)
             }
             DownloadError::ReqwestError(e) => write!(f, "Download error: {}", e),
+            DownloadError::RateLimitError(e) => write!(f, "Downloads exceeded rate limit: {}", e),
         }
     }
 }
@@ -58,14 +66,16 @@ impl MaybePermanentError for DownloadError {
             DownloadError::ParseError(_) => true,
             DownloadError::NoSuchChapter(_) => true,
             DownloadError::ChapterIsWrongLanguage(_) => true,
+            DownloadError::RateLimitError(_) => false,
             DownloadError::ReqwestError(e) => e.is_builder() || e.is_status(),
         }
     }
 }
 
-pub async fn with_retry<T, F>(f: impl Fn() -> F) -> Result<T>
+pub async fn with_retry<T, F, G>(f: impl Fn() -> F, wait: impl Fn() -> G) -> Result<T>
 where
     F: Future<Output = Result<T>>,
+    G: Future<Output = ()>,
 {
     use rand::Rng;
     let mut rng = rand::thread_rng();
@@ -75,6 +85,7 @@ where
         count += 1;
         match f().await {
             v @ Ok(_) => return v,
+            Err(DownloadError::RateLimitError(_)) => wait().await,
             Err(e) if e.is_permanent() => return Err(e),
             e => {
                 if count < 4 {

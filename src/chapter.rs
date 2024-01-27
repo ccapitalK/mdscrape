@@ -12,7 +12,7 @@ use log::debug;
 
 use crate::common::*;
 use crate::context::ScrapeContext;
-use crate::retry::{with_retry, DownloadError, Result};
+use crate::retry::{DownloadError, Result};
 use uuid::Uuid;
 
 async fn download_image(url: &Url, context: &ScrapeContext) -> Result<Vec<u8>> {
@@ -67,12 +67,12 @@ impl ChapterInfo {
         T: DeserializeOwned,
     {
         let origin = url.origin();
-        let _ticket = context.get_ticket(&origin).await;
-        with_retry(|| async {
-            let resp = CLIENT.get(url.clone()).send().await?.error_for_status()?;
-            Ok(resp.json::<T>().await?)
-        })
-        .await
+        context
+            .with_retry_for_origin(&origin, || async {
+                let resp = CLIENT.get(url.clone()).send().await?.error_for_status()?;
+                Ok(resp.json::<T>().await?)
+            })
+            .await
     }
 
     pub async fn from_chapter_data(data: api::chapter::ChapterData, context: &ScrapeContext) -> Result<Self> {
@@ -100,7 +100,6 @@ impl ChapterInfo {
     }
 
     pub async fn download_for_chapter(chapter_id: Uuid, context: &ScrapeContext) -> Result<Self> {
-        
         let chapter_info_url = Url::parse(&format!("https://api.mangadex.org/chapter/{}", chapter_id)).unwrap();
 
         debug!("Going to download chapter info from \"{}\"", chapter_info_url);
@@ -147,10 +146,10 @@ impl ChapterInfo {
                                 debug!("Skipping {:#?}, since it already exists", path);
                             }
                         } else {
-                            let _ticket = context.get_priority_ticket(origin).await;
                             debug!("Getting {} as {:#?}", file_url, path);
-                            let chapter_data =
-                                with_retry(|| async { download_image(&url, context).await }).await?;
+                            let chapter_data = context
+                                .with_retry_for_origin(&origin, || async { download_image(&url, context).await })
+                                .await?;
                             // Create output file
                             let mut out_file = File::create(path)?;
                             // Write data
