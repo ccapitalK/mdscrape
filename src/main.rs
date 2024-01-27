@@ -7,6 +7,7 @@ mod common;
 mod context;
 mod retry;
 mod throttle;
+mod throttle2;
 mod title;
 mod tui;
 
