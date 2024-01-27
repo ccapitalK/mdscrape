@@ -26,10 +26,14 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[tokio::main(worker_threads = 1)]
 async fn main() -> OpaqueResult<()> {
-    SimpleLogger::new().with_level(LevelFilter::Warn).init().unwrap();
     // let tui = TUI::new()?;
     let context = ScrapeContext::from_args();
-    println!("{:?}", context);
+    let level = if context.verbose {
+        LevelFilter::Info
+    } else {
+        LevelFilter::Warn
+    };
+    SimpleLogger::new().with_level(level).init().unwrap();
     // Setup progress bar
     let progress = context.progress.clone();
     let invis_bar = progress.add(indicatif::ProgressBar::hidden());
